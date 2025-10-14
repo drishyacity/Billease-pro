@@ -4,11 +4,30 @@ import '../../controllers/product_controller.dart';
 import '../../models/product_model.dart';
 import 'product_detail_screen.dart';
 import 'product_form_screen.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:pdf/pdf.dart';
+import 'package:printing/printing.dart';
+import 'package:excel/excel.dart' as ex;
+import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
+import 'dart:io';
+import '../../services/database_service.dart';
 
 class ProductListScreen extends StatelessWidget {
   final ProductController productController = Get.find<ProductController>();
 
   ProductListScreen({Key? key}) : super(key: key);
+
+  ex.CellValue _toCellValue(dynamic v) {
+    if (v == null) return ex.TextCellValue('');
+    if (v is String) return ex.TextCellValue(v);
+    if (v is int) return ex.IntCellValue(v);
+    if (v is double) return ex.DoubleCellValue(v);
+    if (v is num) return ex.DoubleCellValue(v.toDouble());
+    if (v is DateTime) return ex.TextCellValue(v.toIso8601String().split('T').first);
+    return ex.TextCellValue(v.toString());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,36 +53,6 @@ class ProductListScreen extends StatelessWidget {
         if (productController.isLoading.value) {
           return const Center(child: CircularProgressIndicator());
         }
-        
-        if (productController.filteredProducts.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.inventory_2_outlined, size: 80, color: Colors.grey),
-                const SizedBox(height: 16),
-                const Text(
-                  'No products found',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  productController.products.isEmpty
-                      ? 'Add your first product to get started'
-                      : 'Try adjusting your search or filters',
-                  style: const TextStyle(color: Colors.grey),
-                ),
-                const SizedBox(height: 24),
-                if (productController.products.isEmpty)
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add Product'),
-                    onPressed: () => Get.to(ProductFormScreen(product: null)),
-                  ),
-              ],
-            ),
-          );
-        }
 
         return Column(
           children: [
@@ -79,13 +68,40 @@ class ProductListScreen extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: ListView.builder(
-                itemCount: productController.filteredProducts.length,
-                itemBuilder: (context, index) {
-                  final product = productController.filteredProducts[index];
-                  return ProductListItem(product: product);
-                },
-              ),
+              child: productController.filteredProducts.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.inventory_2_outlined, size: 80, color: Colors.grey),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'No products found',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            productController.products.isEmpty
+                                ? 'Add your first product to get started'
+                                : 'Try adjusting your search or filters',
+                            style: const TextStyle(color: Colors.grey),
+                          ),
+                          const SizedBox(height: 24),
+                          ElevatedButton.icon(
+                            icon: const Icon(Icons.add),
+                            label: const Text('Add Product'),
+                            onPressed: () => Get.to(ProductFormScreen(product: null)),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: productController.filteredProducts.length,
+                      itemBuilder: (context, index) {
+                        final product = productController.filteredProducts[index];
+                        return ProductListItem(product: product);
+                      },
+                    ),
             ),
           ],
         );
@@ -194,23 +210,26 @@ class ProductListScreen extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.picture_as_pdf),
               title: const Text('Export as PDF'),
-              onTap: () {
-                // Implement PDF export
+              onTap: () async {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Exporting as PDF...')),
-                );
+                await _exportAsPdf(context);
               },
             ),
             ListTile(
               leading: const Icon(Icons.table_chart),
               title: const Text('Export as Excel'),
-              onTap: () {
-                // Implement Excel export
+              onTap: () async {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Exporting as Excel...')),
-                );
+                await _exportAsExcel(context);
+              },
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.download),
+              title: const Text('Download Sample Excel'),
+              onTap: () async {
+                Navigator.pop(context);
+                await _downloadSampleExcel(context);
               },
             ),
           ],
@@ -233,19 +252,16 @@ class ProductListScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Name, Barcode, Category, Unit, Cost Price, Selling Price, MRP, Stock, Expiry Date',
+              'name, barcode, category, unit, cost_price, selling_price, mrp, stock, expiry_date(YYYY-MM-DD)',
               style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
               icon: const Icon(Icons.upload_file),
               label: const Text('Select File'),
-              onPressed: () {
-                // Implement file selection
+              onPressed: () async {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('File import functionality will be implemented soon')),
-                );
+                await _importFromExcel(context);
               },
             ),
           ],
@@ -258,6 +274,250 @@ class ProductListScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _exportAsPdf(BuildContext context) async {
+    try {
+      final pdf = pw.Document();
+      final headers = ['Name','Barcode','Category','Unit','MRP','Selling Price','Cost Price','Stock'];
+      final rows = productController.products.map((p) {
+        final first = p.batches.isNotEmpty ? p.batches.first : null;
+        return [
+          p.name,
+          p.barcode ?? '',
+          p.category ?? '',
+          p.primaryUnit,
+          first?.mrp.toStringAsFixed(2) ?? '',
+          first?.sellingPrice.toStringAsFixed(2) ?? '',
+          first?.costPrice.toStringAsFixed(2) ?? '',
+          p.totalStock.toString(),
+        ];
+      }).toList();
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          build: (context) => [
+            pw.Text('Products Export', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 12),
+            pw.Table.fromTextArray(headers: headers, data: rows),
+          ],
+        ),
+      );
+      final dir = await getTemporaryDirectory();
+      final file = File(p.join(dir.path, 'products_export.pdf'));
+      await file.writeAsBytes(await pdf.save());
+      await Printing.sharePdf(bytes: await file.readAsBytes(), filename: 'products_export.pdf');
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to export PDF: $e')),
+      );
+    }
+  }
+
+  Future<void> _exportAsExcel(BuildContext context) async {
+    try {
+      final excel = ex.Excel.createExcel();
+      final sheet = excel['Products'];
+      final headers = ['name','barcode','category','unit','cost_price','selling_price','mrp','stock','expiry_date'];
+      sheet.appendRow(headers.map<ex.CellValue?>((h) => ex.TextCellValue(h)).toList());
+      for (final p in productController.products) {
+        final first = p.batches.isNotEmpty ? p.batches.first : null;
+        final row = [
+          p.name,
+          p.barcode ?? '',
+          p.category ?? '',
+          p.primaryUnit,
+          first?.costPrice ?? 0,
+          first?.sellingPrice ?? 0,
+          first?.mrp ?? 0,
+          p.totalStock,
+          first?.expiryDate?.toIso8601String().split('T').first ?? '',
+        ];
+        sheet.appendRow(row.map<ex.CellValue?>((e) => _toCellValue(e)).toList());
+      }
+      final bytes = excel.encode()!;
+      final dir = await getTemporaryDirectory();
+      final file = File(p.join(dir.path, 'products_export.xlsx'));
+      await file.writeAsBytes(bytes, flush: true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Excel saved to ${file.path}')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to export Excel: $e')),
+      );
+    }
+  }
+
+  Future<void> _downloadSampleExcel(BuildContext context) async {
+    try {
+      final excel = ex.Excel.createExcel();
+      final sheet = excel['Products'];
+      final headers = ['name','barcode','category','unit','cost_price','selling_price','mrp','stock','expiry_date'];
+      sheet.appendRow(headers.map((h) => ex.TextCellValue(h)).toList());
+      final sample = ['Paracetamol 500mg','8901234567890','Medicines','piece',1.5,2.0,2.5,100,'2026-03-31'];
+      sheet.appendRow(sample.map<ex.CellValue?>((e) => _toCellValue(e)).toList());
+      final bytes = excel.encode()!;
+      final dir = await getTemporaryDirectory();
+      final file = File(p.join(dir.path, 'products_sample.xlsx'));
+      await file.writeAsBytes(bytes, flush: true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Sample saved to ${file.path}')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to create sample: $e')),
+      );
+    }
+  }
+
+  Future<void> _importFromExcel(BuildContext context) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['xlsx']);
+      if (result == null || result.files.isEmpty) return;
+      final bytes = result.files.single.bytes ?? await File(result.files.single.path!).readAsBytes();
+      final excel = ex.Excel.decodeBytes(bytes);
+      final db = DatabaseService();
+      final sheet = excel.tables.values.first; // take first sheet
+      if (sheet.maxRows <= 1) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No data rows found.')));
+        return;
+      }
+      // assume header row at index 0
+      for (var r = 1; r < sheet.maxRows; r++) {
+        final row = sheet.row(r);
+        String getS(int c) => row.length > c && row[c] != null ? row[c]!.value.toString().trim() : '';
+        double getD(int c) => row.length > c && row[c] != null ? double.tryParse(row[c]!.value.toString()) ?? 0 : 0;
+        int getI(int c) => row.length > c && row[c] != null ? int.tryParse(row[c]!.value.toString()) ?? 0 : 0;
+        final name = getS(0);
+        final barcode = getS(1);
+        final category = getS(2);
+        final unit = getS(3).isEmpty ? 'piece' : getS(3);
+        final costPrice = getD(4);
+        final sellingPrice = getD(5);
+        final mrp = getD(6);
+        final stock = getI(7);
+        final expiryStr = getS(8);
+        DateTime? expiryDate;
+        if (expiryStr.isNotEmpty) {
+          try { expiryDate = DateTime.parse(expiryStr); } catch (_) {}
+        }
+        if (name.isEmpty) continue;
+        final existing = await db.findProductByBarcodeOrName(barcode: barcode.isEmpty ? null : barcode, name: name);
+        final now = DateTime.now();
+        if (existing == null) {
+          final id = DateTime.now().microsecondsSinceEpoch.toString();
+          await db.upsertProduct({
+            'id': id,
+            'name': name,
+            'barcode': barcode.isEmpty ? null : barcode,
+            'category': category.isEmpty ? null : category,
+            'primary_unit': unit,
+            'gst_percentage': 0,
+            'low_stock_alert': 10,
+            'expiry_alert_days': 30,
+            'created_at': now.toIso8601String(),
+            'updated_at': now.toIso8601String(),
+          });
+          // default New/Old based on import row
+          final newBatch = {
+            'id': 'BATCH_${id}_NEW',
+            'product_id': id,
+            'name': 'New',
+            'cost_price': costPrice,
+            'selling_price': sellingPrice,
+            'mrp': mrp,
+            'expiry_date': expiryDate?.toIso8601String(),
+            'stock': stock,
+          };
+          final oldBatch = {
+            'id': 'BATCH_${id}_OLD',
+            'product_id': id,
+            'name': 'Old',
+            'cost_price': costPrice,
+            'selling_price': sellingPrice,
+            'mrp': mrp,
+            'expiry_date': expiryDate?.toIso8601String(),
+            'stock': stock,
+          };
+          await db.insertBatch(newBatch);
+          await db.insertBatch(oldBatch);
+        } else {
+          final id = existing['id'] as String;
+          await db.upsertProduct({
+            'id': id,
+            'name': name,
+            'barcode': barcode.isEmpty ? null : barcode,
+            'category': category.isEmpty ? null : category,
+            'primary_unit': unit,
+            'gst_percentage': existing['gst_percentage'] ?? 0,
+            'low_stock_alert': existing['low_stock_alert'] ?? 10,
+            'expiry_alert_days': existing['expiry_alert_days'] ?? 30,
+            'created_at': existing['created_at'],
+            'updated_at': now.toIso8601String(),
+          });
+          // rollover: copy previous New -> Old, then update New
+          final batches = await db.getBatchesByProductId(id);
+          Map<String, dynamic>? newB;
+          Map<String, dynamic>? oldB;
+          for (final b in batches) {
+            final nm = (b['name'] as String).toLowerCase();
+            if (nm == 'new') newB = b;
+            if (nm == 'old') oldB = b;
+          }
+          if (newB != null && oldB != null) {
+            await db.updateBatch({
+              'id': oldB['id'],
+              'product_id': id,
+              'name': 'Old',
+              'cost_price': newB['cost_price'],
+              'selling_price': newB['selling_price'],
+              'mrp': newB['mrp'],
+              'expiry_date': newB['expiry_date'],
+              'stock': newB['stock'],
+            });
+            await db.updateBatch({
+              'id': newB['id'],
+              'product_id': id,
+              'name': 'New',
+              'cost_price': costPrice,
+              'selling_price': sellingPrice,
+              'mrp': mrp,
+              'expiry_date': expiryDate?.toIso8601String(),
+              'stock': stock,
+            });
+          } else {
+            // create both if missing
+            await db.insertBatch({
+              'id': 'BATCH_${id}_NEW',
+              'product_id': id,
+              'name': 'New',
+              'cost_price': costPrice,
+              'selling_price': sellingPrice,
+              'mrp': mrp,
+              'expiry_date': expiryDate?.toIso8601String(),
+              'stock': stock,
+            });
+            await db.insertBatch({
+              'id': 'BATCH_${id}_OLD',
+              'product_id': id,
+              'name': 'Old',
+              'cost_price': costPrice,
+              'selling_price': sellingPrice,
+              'mrp': mrp,
+              'expiry_date': expiryDate?.toIso8601String(),
+              'stock': stock,
+            });
+          }
+        }
+      }
+      productController.loadProducts();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Import completed')));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to import: $e')),
+      );
+    }
   }
 }
 
@@ -434,6 +694,15 @@ class ProductSearchDelegate extends SearchDelegate<String> {
               Text(
                 'No products found for "$query"',
                 style: const TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.add),
+                label: const Text('Add Product'),
+                onPressed: () {
+                  close(Get.context!, '');
+                  Get.to(() => ProductFormScreen(product: null));
+                },
               ),
             ],
           ),

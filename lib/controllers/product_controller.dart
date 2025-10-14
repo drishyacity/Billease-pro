@@ -11,6 +11,9 @@ class ProductController extends GetxController {
   final RxBool lowStockOnly = false.obs;
   final RxBool nearExpiryOnly = false.obs;
   final RxBool expiredOnly = false.obs;
+  final RxnInt nearExpiryWithinDays = RxnInt(null);
+  final RxnInt nearExpiryMonth = RxnInt(null); // 1-12
+  final RxnInt nearExpiryYear = RxnInt(null);
 
   RxList<Product> get products => _products;
   RxList<Product> get filteredProducts => _filteredProducts;
@@ -70,6 +73,24 @@ class ProductController extends GetxController {
     _applyFilters();
   }
 
+  void setNearExpiryWithinDays(int? days) {
+    nearExpiryWithinDays.value = days;
+    _applyFilters();
+  }
+
+  void setNearExpiryMonthYear({int? month, int? year}) {
+    nearExpiryMonth.value = month;
+    nearExpiryYear.value = year;
+    _applyFilters();
+  }
+
+  void clearNearExpiryFilters() {
+    nearExpiryWithinDays.value = null;
+    nearExpiryMonth.value = null;
+    nearExpiryYear.value = null;
+    _applyFilters();
+  }
+
   void _applyFilters() {
     List<Product> filtered = _products.toList();
     
@@ -94,7 +115,27 @@ class ProductController extends GetxController {
       filtered = filtered.where((p) => p.isLowStock).toList();
     }
     if (nearExpiryOnly.value) {
-      filtered = filtered.where((p) => p.hasNearExpiryBatches()).toList();
+      if (nearExpiryMonth.value != null && nearExpiryYear.value != null) {
+        filtered = filtered.where((p) {
+          return p.batches.any((b) {
+            if (b.expiryDate == null) return false;
+            final e = b.expiryDate!;
+            return e.year == nearExpiryYear.value && e.month == nearExpiryMonth.value;
+          });
+        }).toList();
+      } else if (nearExpiryWithinDays.value == null) {
+        filtered = filtered.where((p) => p.hasNearExpiryBatches()).toList();
+      } else {
+        final now = DateTime.now();
+        final maxDays = nearExpiryWithinDays.value!;
+        filtered = filtered.where((p) {
+          return p.batches.any((b) {
+            if (b.expiryDate == null) return false;
+            final d = b.expiryDate!.difference(now).inDays;
+            return d >= 0 && d <= maxDays;
+          });
+        }).toList();
+      }
     }
     if (expiredOnly.value) {
       filtered = filtered.where((p) => p.hasExpiredBatches()).toList();

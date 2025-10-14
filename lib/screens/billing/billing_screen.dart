@@ -8,8 +8,10 @@ import '../../widgets/loading_widget.dart';
 
 class BillingScreen extends StatefulWidget {
   final String? initialBillType;
+  final int? initialTabIndex;
+  final bool showTodayOnly;
   
-  const BillingScreen({Key? key, this.initialBillType}) : super(key: key);
+  const BillingScreen({Key? key, this.initialBillType, this.initialTabIndex, this.showTodayOnly = false}) : super(key: key);
 
   @override
   State<BillingScreen> createState() => _BillingScreenState();
@@ -22,7 +24,7 @@ class _BillingScreenState extends State<BillingScreen> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 2, vsync: this, initialIndex: widget.initialTabIndex ?? 0);
     billController.loadBills();
   }
   
@@ -188,17 +190,21 @@ class _BillingScreenState extends State<BillingScreen> with SingleTickerProvider
             if (billController.isLoading) {
               return const Center(child: LoadingWidget());
             }
-            
-            if (billController.filteredBills.isEmpty) {
+            final List<Bill> source = widget.showTodayOnly
+                ? billController.bills.where((b) {
+                    final now = DateTime.now();
+                    return b.date.year == now.year && b.date.month == now.month && b.date.day == now.day;
+                  }).toList()
+                : billController.filteredBills;
+            if (source.isEmpty) {
               return const Center(
                 child: Text('No bills found'),
               );
             }
-            
             return ListView.builder(
-              itemCount: billController.filteredBills.length,
+              itemCount: source.length,
               itemBuilder: (context, index) {
-                final bill = billController.filteredBills[index];
+                final bill = source[index];
                 return _buildBillListItem(bill);
               },
             );

@@ -399,7 +399,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
               const SizedBox(height: 12),
               _buildUnitConversionsCard(),
               const SizedBox(height: 12),
-              _buildBatchesFormCard(),
+              if (isEdit) _buildBatchesFormCard(),
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -514,6 +514,19 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final db = DatabaseService();
+    // Duplicate checks
+    final existing = await db.findProductByBarcodeOrName(
+      barcode: _barcode.text.trim().isEmpty ? null : _barcode.text.trim(),
+      name: _name.text.trim(),
+    );
+    if (widget.product == null && existing != null) {
+      Get.snackbar('Duplicate', 'Product already exists', snackPosition: SnackPosition.BOTTOM);
+      return;
+    }
+    if (widget.product != null && existing != null && existing['id'] != widget.product!.id) {
+      Get.snackbar('Duplicate', 'Another product with same name/barcode exists', snackPosition: SnackPosition.BOTTOM);
+      return;
+    }
     final id = widget.product?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
     final now = DateTime.now();
     await db.insertProduct({
@@ -554,16 +567,28 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
         });
       }
     } else {
-      await db.insertBatch({
-        'id': 'BATCH_${id}_1',
+      final newBatch = {
+        'id': 'BATCH_${id}_NEW',
         'product_id': id,
-        'name': 'Default',
+        'name': 'New',
         'cost_price': double.tryParse(_costPrice.text) ?? 0.0,
         'selling_price': double.tryParse(_sellingPrice.text) ?? 0.0,
         'mrp': double.tryParse(_mrp.text) ?? 0.0,
         'expiry_date': _expiryDate?.toIso8601String(),
         'stock': int.tryParse(_stock.text) ?? 0,
-      });
+      };
+      final oldBatch = {
+        'id': 'BATCH_${id}_OLD',
+        'product_id': id,
+        'name': 'Old',
+        'cost_price': newBatch['cost_price'],
+        'selling_price': newBatch['selling_price'],
+        'mrp': newBatch['mrp'],
+        'expiry_date': newBatch['expiry_date'],
+        'stock': newBatch['stock'],
+      };
+      await db.insertBatch(newBatch);
+      await db.insertBatch(oldBatch);
     }
 
     _productController.loadProducts();

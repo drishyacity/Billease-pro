@@ -33,10 +33,10 @@ class Customer {
       email: json['email'],
       address: json['address'],
       gstin: json['gstin'],
-      totalPurchases: json['totalPurchases'] ?? 0.0,
-      dueAmount: json['dueAmount'] ?? 0.0,
-      createdAt: DateTime.parse(json['createdAt']),
-      updatedAt: DateTime.parse(json['updatedAt']),
+      totalPurchases: (json['totalPurchases'] ?? json['total_purchases'] ?? 0).toDouble(),
+      dueAmount: (json['dueAmount'] ?? json['due_amount'] ?? 0).toDouble(),
+      createdAt: DateTime.parse((json['createdAt'] ?? json['created_at']) as String),
+      updatedAt: DateTime.parse((json['updatedAt'] ?? json['updated_at']) as String),
     );
   }
 

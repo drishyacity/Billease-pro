@@ -8,6 +8,7 @@ import '../products/product_list_screen.dart';
 import '../bills/bill_history_screen.dart';
 import '../reports/reports_screen.dart';
 import '../settings/settings_screen.dart';
+import '../products/near_expiry_grouped_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -128,18 +129,68 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       value: '₹${todayTotal.toStringAsFixed(2)}',
                       color: Colors.teal,
                       icon: Icons.currency_rupee,
+                      onTap: () {
+                        Get.to(() => BillingScreen(initialTabIndex: 1, showTodayOnly: true));
+                      },
                     ),
                     _buildStatCard(
                       title: 'Low Stock',
                       value: '$lowStockCount',
                       color: Colors.red,
                       icon: Icons.warning_amber,
+                      onTap: () {
+                        _productController.setStockExpiryFilters(lowStock: true, nearExpiry: false, expired: false);
+                        Get.to(() => ProductListScreen());
+                      },
                     ),
                     _buildStatCard(
                       title: 'Near Expiry',
                       value: '$nearExpiryCount',
                       color: Colors.orange,
                       icon: Icons.timer,
+                      onTap: () async {
+                        final now = DateTime.now();
+                        final months = List.generate(12, (i) => i + 1); // 1..12
+                        final selected = await showDialog<Map<String,int>?>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Select Month for Near Expiry'),
+                            content: SingleChildScrollView(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ...months.map((m) {
+                                    final year = m >= now.month ? now.year : now.year + 1;
+                                    final label = '${m.toString().padLeft(2,'0')}/$year';
+                                    return ListTile(
+                                      title: Text(label),
+                                      onTap: () => Navigator.pop(context, {'month': m, 'year': year}),
+                                    );
+                                  }).toList(),
+                                  const Divider(),
+                                  ListTile(
+                                    title: const Text('Show all near expiry (grouped monthly)'),
+                                    onTap: () => Navigator.pop(context, {'month': 0, 'year': 0}),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                        if (selected != null) {
+                          if (selected['month'] == 0) {
+                            _productController.setStockExpiryFilters(nearExpiry: true, lowStock: false, expired: false);
+                            _productController.setNearExpiryWithinDays(null);
+                            _productController.setNearExpiryMonthYear(month: null, year: null);
+                            Get.to(() => NearExpiryGroupedScreen());
+                          } else {
+                            _productController.setNearExpiryWithinDays(null);
+                            _productController.setNearExpiryMonthYear(month: selected['month'], year: selected['year']);
+                            _productController.setStockExpiryFilters(nearExpiry: true, lowStock: false, expired: false);
+                            Get.to(() => ProductListScreen());
+                          }
+                        }
+                      },
                     ),
                   ];
                   return Wrap(
@@ -260,8 +311,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required String value,
     required Color color,
     required IconData icon,
+    VoidCallback? onTap,
   }) {
-    return Container
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container
     (
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -303,6 +358,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

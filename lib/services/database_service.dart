@@ -16,6 +16,11 @@ class DatabaseService {
     return _db!;
   }
 
+  Future<List<Map<String, dynamic>>> getBatchesByProductId(String productId) async {
+    final db = await database;
+    return db.query('batches', where: 'product_id = ?', whereArgs: [productId]);
+  }
+
   Future<Database> _initDb() async {
     final docsDir = await getApplicationDocumentsDirectory();
     final dbPath = p.join(docsDir.path, 'billease_pro.db');
@@ -235,6 +240,24 @@ class DatabaseService {
     await db.insert('products', product, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
+  Future<void> upsertProduct(Map<String, dynamic> product) async {
+    final db = await database;
+    await db.insert('products', product, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<Map<String, dynamic>?> findProductByBarcodeOrName({String? barcode, String? name}) async {
+    final db = await database;
+    if (barcode != null && barcode.isNotEmpty) {
+      final rows = await db.query('products', where: 'barcode = ?', whereArgs: [barcode], limit: 1);
+      if (rows.isNotEmpty) return rows.first;
+    }
+    if (name != null && name.isNotEmpty) {
+      final rows = await db.query('products', where: 'LOWER(name) = LOWER(?)', whereArgs: [name], limit: 1);
+      if (rows.isNotEmpty) return rows.first;
+    }
+    return null;
+  }
+
   Future<void> insertBatch(Map<String, dynamic> batch) async {
     final db = await database;
     await db.insert('batches', batch, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -278,6 +301,24 @@ class DatabaseService {
       'updated_at': customer['updatedAt'],
     };
     await db.insert('customers', data, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteCustomerById(String id) async {
+    final db = await database;
+    await db.delete('customers', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<Map<String, dynamic>?> findCustomerByPhoneOrName({String? phone, String? name}) async {
+    final db = await database;
+    if (phone != null && phone.isNotEmpty) {
+      final rows = await db.query('customers', where: 'phone = ?', whereArgs: [phone], limit: 1);
+      if (rows.isNotEmpty) return rows.first;
+    }
+    if (name != null && name.isNotEmpty) {
+      final rows = await db.query('customers', where: 'LOWER(name) = LOWER(?)', whereArgs: [name], limit: 1);
+      if (rows.isNotEmpty) return rows.first;
+    }
+    return null;
   }
 
   Future<void> deleteProductById(String productId) async {

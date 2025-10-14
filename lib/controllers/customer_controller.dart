@@ -34,13 +34,25 @@ class CustomerController extends GetxController {
   }
 
   Future<void> addCustomer(Customer customer) async {
-    await DatabaseService().upsertCustomer(customer.toJson());
+    final db = DatabaseService();
+    final existing = await db.findCustomerByPhoneOrName(phone: customer.phone, name: customer.name);
+    if (existing != null) {
+      Get.snackbar('Duplicate', 'Customer already exists', snackPosition: SnackPosition.BOTTOM);
+      return;
+    }
+    await db.upsertCustomer(customer.toJson());
     _customers.add(customer);
     filterCustomers(searchQuery.value);
   }
 
   Future<void> updateCustomer(Customer updatedCustomer) async {
-    await DatabaseService().upsertCustomer(updatedCustomer.toJson());
+    final db = DatabaseService();
+    final existing = await db.findCustomerByPhoneOrName(phone: updatedCustomer.phone, name: updatedCustomer.name);
+    if (existing != null && existing['id'] != updatedCustomer.id) {
+      Get.snackbar('Duplicate', 'Another customer with same name/phone exists', snackPosition: SnackPosition.BOTTOM);
+      return;
+    }
+    await db.upsertCustomer(updatedCustomer.toJson());
     final index = _customers.indexWhere((c) => c.id == updatedCustomer.id);
     if (index != -1) {
       _customers[index] = updatedCustomer;
@@ -49,8 +61,10 @@ class CustomerController extends GetxController {
   }
 
   void deleteCustomer(String id) {
-    _customers.removeWhere((c) => c.id == id);
-    filterCustomers(searchQuery.value);
+    DatabaseService().deleteCustomerById(id).then((_) {
+      _customers.removeWhere((c) => c.id == id);
+      filterCustomers(searchQuery.value);
+    });
   }
 
   void filterCustomers(String query) {

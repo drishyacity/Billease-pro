@@ -88,7 +88,27 @@ class ProductDetailScreen extends StatelessWidget {
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
             ElevatedButton(
               onPressed: () async {
-                await DatabaseService().updateBatch({
+                final db = DatabaseService();
+                // If editing 'New', roll previous 'New' values into 'Old' before updating
+                if (batch.name.toLowerCase() == 'new') {
+                  ProductBatch? oldBatch;
+                  for (final b in product.batches) {
+                    if (b.name.toLowerCase() == 'old') { oldBatch = b; break; }
+                  }
+                  if (oldBatch != null) {
+                    await db.updateBatch({
+                      'id': oldBatch.id,
+                      'product_id': product.id,
+                      'name': oldBatch.name,
+                      'cost_price': batch.costPrice,
+                      'selling_price': batch.sellingPrice,
+                      'mrp': batch.mrp,
+                      'expiry_date': batch.expiryDate?.toIso8601String(),
+                      'stock': batch.stock,
+                    });
+                  }
+                }
+                await db.updateBatch({
                   'id': batch.id,
                   'product_id': product.id,
                   'name': name.text.trim().isEmpty ? batch.name : name.text.trim(),
