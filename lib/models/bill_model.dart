@@ -1,0 +1,168 @@
+import 'package:get/get.dart';
+import 'package:uuid/uuid.dart';
+
+enum BillType { quickSale, retail, wholesale }
+
+enum BillStatus { draft, completed, partiallyPaid, fullyPaid }
+
+class Bill {
+  final String id;
+  final DateTime date;
+  final BillType type;
+  final String? customerId;
+  final String? customerName;
+  final List<BillItem> items;
+  final double totalAmount;
+  final double paidAmount;
+  final BillStatus status;
+  final String? notes;
+
+  Bill({
+    String? id,
+    DateTime? date,
+    required this.type,
+    this.customerId,
+    this.customerName,
+    required this.items,
+    required this.totalAmount,
+    this.paidAmount = 0.0,
+    this.status = BillStatus.draft,
+    this.notes,
+  }) : 
+    id = id ?? const Uuid().v4(),
+    date = date ?? DateTime.now();
+
+  Bill copyWith({
+    String? id,
+    DateTime? date,
+    BillType? type,
+    String? customerId,
+    String? customerName,
+    List<BillItem>? items,
+    double? totalAmount,
+    double? paidAmount,
+    BillStatus? status,
+    String? notes,
+  }) {
+    return Bill(
+      id: id ?? this.id,
+      date: date ?? this.date,
+      type: type ?? this.type,
+      customerId: customerId ?? this.customerId,
+      customerName: customerName ?? this.customerName,
+      items: items ?? this.items,
+      totalAmount: totalAmount ?? this.totalAmount,
+      paidAmount: paidAmount ?? this.paidAmount,
+      status: status ?? this.status,
+      notes: notes ?? this.notes,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'date': date.toIso8601String(),
+      'type': type.toString(),
+      'customerId': customerId,
+      'customerName': customerName,
+      'items': items.map((item) => item.toJson()).toList(),
+      'totalAmount': totalAmount,
+      'paidAmount': paidAmount,
+      'status': status.toString(),
+      'notes': notes,
+    };
+  }
+
+  factory Bill.fromJson(Map<String, dynamic> json) {
+    String typeRaw = json['type'];
+    String statusRaw = json['status'];
+    BillType resolvedType = BillType.retail;
+    for (final e in BillType.values) {
+      if (typeRaw == e.toString() || typeRaw == e.name) {
+        resolvedType = e;
+        break;
+      }
+    }
+    BillStatus resolvedStatus = BillStatus.draft;
+    for (final e in BillStatus.values) {
+      if (statusRaw == e.toString() || statusRaw == e.name) {
+        resolvedStatus = e;
+        break;
+      }
+    }
+    return Bill(
+      id: json['id'],
+      date: DateTime.parse(json['date']),
+      type: resolvedType,
+      customerId: json['customerId'],
+      customerName: json['customerName'],
+      items: (json['items'] as List?)?.map((item) => BillItem.fromJson(item)).toList() ?? const [],
+      totalAmount: json['totalAmount'],
+      paidAmount: json['paidAmount'] ?? 0.0,
+      status: resolvedStatus,
+      notes: json['notes'],
+    );
+  }
+}
+
+class BillItem {
+  final String id;
+  final String productId;
+  final String productName;
+  final double quantity;
+  final double unitPrice;
+  final double totalPrice;
+  final String? batchId;
+  final String? unit; // e.g. piece, box
+  final double? cgst; // percent
+  final double? sgst; // percent
+  final double? discountPercent; // percent
+
+  BillItem({
+    String? id,
+    required this.productId,
+    required this.productName,
+    required this.quantity,
+    required this.unitPrice,
+    double? totalPrice,
+    this.batchId,
+    this.unit,
+    this.cgst,
+    this.sgst,
+    this.discountPercent,
+  }) : 
+    id = id ?? const Uuid().v4(),
+    totalPrice = totalPrice ?? (quantity * unitPrice);
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'productId': productId,
+      'productName': productName,
+      'quantity': quantity,
+      'unitPrice': unitPrice,
+      'totalPrice': totalPrice,
+      'batch_id': batchId,
+      'unit': unit,
+      'cgst': cgst,
+      'sgst': sgst,
+      'discount_percent': discountPercent,
+    };
+  }
+
+  factory BillItem.fromJson(Map<String, dynamic> json) {
+    return BillItem(
+      id: json['id'],
+      productId: json['productId'],
+      productName: json['productName'],
+      quantity: json['quantity'],
+      unitPrice: json['unitPrice'],
+      totalPrice: json['totalPrice'],
+      batchId: json['batch_id'],
+      unit: json['unit'],
+      cgst: (json['cgst'] as num?)?.toDouble(),
+      sgst: (json['sgst'] as num?)?.toDouble(),
+      discountPercent: (json['discount_percent'] as num?)?.toDouble(),
+    );
+  }
+}
