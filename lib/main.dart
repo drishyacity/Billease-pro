@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:get/get.dart';
 import 'package:billease_pro/screens/auth/login_screen.dart';
 import 'services/database_service.dart';
@@ -11,6 +13,11 @@ import 'package:billease_pro/controllers/customer_controller.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Initialize desktop SQLite driver
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
   // Init local database
   await DatabaseService().database;
   // Start auto-backups
