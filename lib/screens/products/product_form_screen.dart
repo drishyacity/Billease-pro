@@ -585,7 +585,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
         'selling_price': newBatch['selling_price'],
         'mrp': newBatch['mrp'],
         'expiry_date': newBatch['expiry_date'],
-        'stock': newBatch['stock'],
+        'stock': 0,
       };
       await db.insertBatch(newBatch);
       await db.insertBatch(oldBatch);

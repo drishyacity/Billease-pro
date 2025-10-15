@@ -16,6 +16,9 @@ import 'dart:typed_data';
 import 'package:file_saver/file_saver.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../services/database_service.dart';
+import '../dashboard/dashboard_screen.dart';
+import '../customers/customer_list_screen.dart';
+import '../billing/billing_screen.dart';
 
 class ProductListScreen extends StatelessWidget {
   final ProductController productController = Get.find<ProductController>();
@@ -52,7 +55,12 @@ class ProductListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return WillPopScope(
+      onWillPop: () async {
+        Get.offAll(() => const DashboardScreen());
+        return false;
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: const Text('Products'),
         actions: [
@@ -131,6 +139,33 @@ class ProductListScreen extends StatelessWidget {
         onPressed: () => Get.to(() => ProductFormScreen(product: null)),
         child: const Icon(Icons.add),
       ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: 2,
+        onTap: (index) {
+          switch (index) {
+            case 0:
+              Get.offAll(() => const DashboardScreen());
+              break;
+            case 1:
+              Get.offAll(() => const CustomerListScreen());
+              break;
+            case 2:
+              // Already on Products
+              break;
+            case 3:
+              Get.offAll(() => const BillingScreen());
+              break;
+          }
+        },
+        type: BottomNavigationBarType.fixed,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Dashboard'),
+          BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Customers'),
+          BottomNavigationBarItem(icon: Icon(Icons.inventory), label: 'Products'),
+          BottomNavigationBarItem(icon: Icon(Icons.receipt), label: 'Billing'),
+        ],
+      ),
+    ),
     );
   }
 
@@ -206,11 +241,9 @@ class ProductListScreen extends StatelessWidget {
           ),
           ElevatedButton(
             onPressed: () {
-              if (selectedCategory != null) {
-                productController.setCategoryFilter(
-                  selectedCategory == 'All' ? '' : selectedCategory!,
-                );
-              }
+              // Apply even when 'All' is chosen (selectedCategory becomes null)
+              final cat = (selectedCategory == null || selectedCategory == 'All') ? '' : selectedCategory!;
+              productController.setCategoryFilter(cat);
               Navigator.pop(context);
             },
             child: const Text('Apply'),
@@ -556,7 +589,7 @@ class ProductListScreen extends StatelessWidget {
             'selling_price': sellingPrice,
             'mrp': mrp,
             'expiry_date': expiryDate?.toIso8601String(),
-            'stock': stock,
+            'stock': 0,
           };
           await db.insertBatch(newBatch);
           await db.insertBatch(oldBatch);

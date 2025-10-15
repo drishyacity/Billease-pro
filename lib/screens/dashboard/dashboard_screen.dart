@@ -6,6 +6,7 @@ import '../billing/billing_screen.dart';
 import '../customers/customer_list_screen.dart';
 import '../products/product_list_screen.dart';
 import '../bills/bill_history_screen.dart';
+import '../bills/estimate_history_screen.dart';
 import '../reports/reports_screen.dart';
 import '../settings/settings_screen.dart';
 import '../products/near_expiry_grouped_screen.dart';
@@ -98,6 +99,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     color: Colors.purple,
                     onTap: () => Get.to(() => BillHistoryScreen()),
                   ),
+                  _buildActionCard(
+                    title: 'Estimate History',
+                    icon: Icons.description_outlined,
+                    color: Colors.orange,
+                    onTap: () => Get.to(() => EstimateHistoryScreen()),
+                  ),
                 ];
                 return Wrap(
                   spacing: spacing,
@@ -138,7 +145,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       color: Colors.teal,
                       icon: Icons.currency_rupee,
                       onTap: () {
-                        Get.to(() => BillingScreen(initialTabIndex: 1, showTodayOnly: true));
+                        Get.to(() => const BillHistoryScreen(initialQuick: 'Today'));
                       },
                     ),
                     _buildStatCard(

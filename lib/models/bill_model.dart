@@ -90,6 +90,8 @@ class Bill {
         break;
       }
     }
+    final num? totalNum = json['totalAmount'] as num?;
+    final num? paidNum = json['paidAmount'] as num?;
     return Bill(
       id: json['id'],
       date: DateTime.parse(json['date']),
@@ -97,8 +99,8 @@ class Bill {
       customerId: json['customerId'],
       customerName: json['customerName'],
       items: (json['items'] as List?)?.map((item) => BillItem.fromJson(item)).toList() ?? const [],
-      totalAmount: json['totalAmount'],
-      paidAmount: json['paidAmount'] ?? 0.0,
+      totalAmount: (totalNum)?.toDouble() ?? 0.0,
+      paidAmount: (paidNum)?.toDouble() ?? 0.0,
       status: resolvedStatus,
       notes: json['notes'],
     );
@@ -117,6 +119,9 @@ class BillItem {
   final double? cgst; // percent
   final double? sgst; // percent
   final double? discountPercent; // percent
+  // Per-bill overrides (do not affect product/batch in DB)
+  final double? mrpOverride;
+  final DateTime? expiryOverride;
 
   BillItem({
     String? id,
@@ -130,6 +135,8 @@ class BillItem {
     this.cgst,
     this.sgst,
     this.discountPercent,
+    this.mrpOverride,
+    this.expiryOverride,
   }) : 
     id = id ?? const Uuid().v4(),
     totalPrice = totalPrice ?? (quantity * unitPrice);
@@ -147,22 +154,29 @@ class BillItem {
       'cgst': cgst,
       'sgst': sgst,
       'discount_percent': discountPercent,
+      'mrp_override': mrpOverride,
+      'expiry_override': expiryOverride?.toIso8601String(),
     };
   }
 
   factory BillItem.fromJson(Map<String, dynamic> json) {
+    final num? q = json['quantity'] as num?;
+    final num? up = json['unitPrice'] as num?;
+    final num? tp = json['totalPrice'] as num?;
     return BillItem(
       id: json['id'],
       productId: json['productId'],
       productName: json['productName'],
-      quantity: json['quantity'],
-      unitPrice: json['unitPrice'],
-      totalPrice: json['totalPrice'],
+      quantity: (q)?.toDouble() ?? 0.0,
+      unitPrice: (up)?.toDouble() ?? 0.0,
+      totalPrice: (tp)?.toDouble(),
       batchId: json['batch_id'],
       unit: json['unit'],
       cgst: (json['cgst'] as num?)?.toDouble(),
       sgst: (json['sgst'] as num?)?.toDouble(),
       discountPercent: (json['discount_percent'] as num?)?.toDouble(),
+      mrpOverride: (json['mrp_override'] as num?)?.toDouble(),
+      expiryOverride: json['expiry_override'] != null ? DateTime.parse(json['expiry_override']) : null,
     );
   }
 }

@@ -4,6 +4,9 @@ import '../../controllers/customer_controller.dart';
 import '../../models/customer_model.dart';
 import 'customer_detail_screen.dart';
 import 'customer_form_screen.dart';
+import '../dashboard/dashboard_screen.dart';
+import '../products/product_list_screen.dart';
+import '../billing/billing_screen.dart';
 
 class CustomerListScreen extends StatelessWidget {
   const CustomerListScreen({Key? key}) : super(key: key);
@@ -81,6 +84,32 @@ class CustomerListScreen extends StatelessWidget {
           }
         },
         child: const Icon(Icons.add),
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: 1,
+        onTap: (index) {
+          switch (index) {
+            case 0:
+              Get.offAll(() => const DashboardScreen());
+              break;
+            case 1:
+              // Already on Customers
+              break;
+            case 2:
+              Get.offAll(() => ProductListScreen());
+              break;
+            case 3:
+              Get.offAll(() => const BillingScreen());
+              break;
+          }
+        },
+        type: BottomNavigationBarType.fixed,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Dashboard'),
+          BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Customers'),
+          BottomNavigationBarItem(icon: Icon(Icons.inventory), label: 'Products'),
+          BottomNavigationBarItem(icon: Icon(Icons.receipt), label: 'Billing'),
+        ],
       ),
     );
   }

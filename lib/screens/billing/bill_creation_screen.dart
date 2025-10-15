@@ -5,7 +5,9 @@ import '../../controllers/product_controller.dart';
 import '../../models/bill_model.dart';
 import '../../models/product_model.dart';
 import '../products/product_form_screen.dart';
+import 'billing_screen.dart';
 import '../../services/database_service.dart';
+import 'package:sqflite/sqflite.dart';
 
 class BillCreationScreen extends StatefulWidget {
   final BillType billType;
@@ -64,17 +66,28 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
         ),
         actions: [
           IconButton(
-            icon: Icon(isEstimate ? Icons.print : Icons.save),
-            onPressed: isEstimate ? _previewEstimate : _saveBill,
+            icon: Icon(isEstimate ? Icons.save : Icons.save),
+            onPressed: isEstimate ? _saveEstimate : _saveBill,
           ),
         ],
       ),
-      // Removed FAB per requirement; use Add Product button below
       body: Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: _buildCustomerSection(isEstimate),
+          ),
+          // Add Product button directly under customer box
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: _showAddItemDialog,
+                icon: const Icon(Icons.add_box_outlined),
+                label: const Text('Add Product'),
+              ),
+            ),
           ),
           if (widget.billType == BillType.wholesale)
             Padding(
@@ -113,12 +126,136 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
                       children: [
                         Text(item.productName, style: const TextStyle(fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
+                        // Inline editable quantity and unit price
                         Row(
                           children: [
-                            Expanded(child: Text('Qty: ${item.quantity.toStringAsFixed(2)} ${item.unit ?? ''}')),
-                            Expanded(child: Text('Price: ₹${item.unitPrice.toStringAsFixed(2)}')),
+                            Expanded(
+                              child: TextFormField(
+                                initialValue: item.quantity.toStringAsFixed(2),
+                                decoration: InputDecoration(labelText: 'Qty (${item.unit ?? ''})'),
+                                keyboardType: TextInputType.number,
+                                onFieldSubmitted: (v) {
+                                  final q = double.tryParse(v) ?? item.quantity;
+                                  setState(() {
+                                    _items[index] = BillItem(
+                                      id: item.id,
+                                      productId: item.productId,
+                                      productName: item.productName,
+                                      quantity: q,
+                                      unitPrice: item.unitPrice,
+                                      totalPrice: q * item.unitPrice,
+                                      batchId: item.batchId,
+                                      unit: item.unit,
+                                      cgst: item.cgst,
+                                      sgst: item.sgst,
+                                      discountPercent: item.discountPercent,
+                                    );
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextFormField(
+                                initialValue: item.unitPrice.toStringAsFixed(2),
+                                decoration: const InputDecoration(labelText: 'Unit Price'),
+                                keyboardType: TextInputType.number,
+                                onFieldSubmitted: (v) {
+                                  final p = double.tryParse(v) ?? item.unitPrice;
+                                  setState(() {
+                                    _items[index] = BillItem(
+                                      id: item.id,
+                                      productId: item.productId,
+                                      productName: item.productName,
+                                      quantity: item.quantity,
+                                      unitPrice: p,
+                                      totalPrice: item.quantity * p,
+                                      batchId: item.batchId,
+                                      unit: item.unit,
+                                      cgst: item.cgst,
+                                      sgst: item.sgst,
+                                      discountPercent: item.discountPercent,
+                                    );
+                                  });
+                                },
+                              ),
+                            ),
                           ],
                         ),
+                        // Inline editable MRP and Expiry (per-bill overrides)
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                initialValue: (item.mrpOverride ?? 0).toStringAsFixed(2),
+                                decoration: const InputDecoration(labelText: 'MRP (override)'),
+                                keyboardType: TextInputType.number,
+                                onFieldSubmitted: (v) {
+                                  final mrp = double.tryParse(v);
+                                  setState(() {
+                                    _items[index] = BillItem(
+                                      id: item.id,
+                                      productId: item.productId,
+                                      productName: item.productName,
+                                      quantity: item.quantity,
+                                      unitPrice: item.unitPrice,
+                                      totalPrice: item.quantity * item.unitPrice,
+                                      batchId: item.batchId,
+                                      unit: item.unit,
+                                      cgst: item.cgst,
+                                      sgst: item.sgst,
+                                      discountPercent: item.discountPercent,
+                                      mrpOverride: mrp,
+                                      expiryOverride: item.expiryOverride,
+                                    );
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: InkWell(
+                                onTap: () async {
+                                  final picked = await showDatePicker(
+                                    context: context,
+                                    initialDate: item.expiryOverride ?? DateTime.now().add(const Duration(days: 365)),
+                                    firstDate: DateTime.now().subtract(const Duration(days: 1)),
+                                    lastDate: DateTime.now().add(const Duration(days: 3650)),
+                                  );
+                                  if (picked != null) {
+                                    setState(() {
+                                      _items[index] = BillItem(
+                                        id: item.id,
+                                        productId: item.productId,
+                                        productName: item.productName,
+                                        quantity: item.quantity,
+                                        unitPrice: item.unitPrice,
+                                        totalPrice: item.quantity * item.unitPrice,
+                                        batchId: item.batchId,
+                                        unit: item.unit,
+                                        cgst: item.cgst,
+                                        sgst: item.sgst,
+                                        discountPercent: item.discountPercent,
+                                        mrpOverride: item.mrpOverride,
+                                        expiryOverride: picked,
+                                      );
+                                    });
+                                  }
+                                },
+                                child: InputDecorator(
+                                  decoration: const InputDecoration(labelText: 'Expiry (override)'),
+                                  child: Text(
+                                    item.expiryOverride == null
+                                        ? 'Not set'
+                                        : '${item.expiryOverride!.day}/${item.expiryOverride!.month}/${item.expiryOverride!.year}',
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
                         if (_gstEnabled)
                           Row(
                             children: [
@@ -152,16 +289,7 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: OutlinedButton.icon(
-                    onPressed: _showAddItemDialog,
-                    icon: const Icon(Icons.add_box_outlined),
-                    label: const Text('Add Product'),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                if (widget.billType != BillType.quickSale) ...[
+                if (!isEstimate && widget.billType != BillType.quickSale) ...[
                   Row(
                     children: [
                       Expanded(
@@ -206,30 +334,49 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
                 const SizedBox(height: 12),
                 _buildTotals(),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _discardBill,
-                        child: const Text('Discard'),
+                if (isEstimate)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _discardBill,
+                          child: const Text('Discard'),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _saveDraft,
-                        child: const Text('Save as Draft'),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _saveEstimate,
+                          child: const Text('Save Estimate'),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: _saveBill,
-                        child: const Text('Save Bill'),
+                    ],
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _discardBill,
+                          child: const Text('Discard'),
+                        ),
                       ),
-                    ),
-                  ],
-                )
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _saveDraft,
+                          child: const Text('Save as Draft'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _saveBill,
+                          child: const Text('Save Bill'),
+                        ),
+                      ),
+                    ],
+                  )
               ],
             ),
           ),
@@ -255,117 +402,199 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, dialogSetState) => AlertDialog(
           title: const Text('Add Item'),
-          content: SizedBox(
-            width: 400,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Product search
-                TextField(
-                  controller: searchCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'Search Product',
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.add_circle_outline),
-                      tooltip: 'Add new product',
-                      onPressed: () async {
-                        await Get.toNamed('/products/new');
-                        // refresh products after returning
-                        _productController.loadProducts();
-                        dialogSetState(() {});
-                      },
-                    ),
-                  ),
-                  onChanged: (_) => dialogSetState(() {}),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 150,
-                  child: ListView(
-                    children: _productController.products
-                        .where((p) => p.name.toLowerCase().contains(searchCtrl.text.toLowerCase()))
-                        .map((p) => ListTile(
-                              title: Text(p.name),
-                              subtitle: Text(p.barcode ?? ''),
-                              onTap: () {
-                                dialogSetState(() {
-                                  selectedProduct = p;
-                                  selectedBatch = p.batches.isNotEmpty ? p.batches.first : null;
-                                  baseUnit = p.primaryUnit;
-                                  qtyCtrls.clear();
-                                  if (baseUnit != null) qtyCtrls[baseUnit!] = TextEditingController(text: '0');
-                                  for (final uc in p.unitConversions) {
-                                    qtyCtrls[uc.convertedUnit] = TextEditingController(text: '0');
-                                  }
-                                  if (selectedBatch != null) {
-                                    if (widget.billType == BillType.wholesale) {
-                                      priceCtrl.text = selectedBatch!.sellingPrice.toStringAsFixed(2);
-                                    } else {
-                                      priceCtrl.text = selectedBatch!.mrp.toStringAsFixed(2);
-                                    }
-                                  } else {
-                                    priceCtrl.text = '0';
-                                  }
-                                });
-                              },
-                            ))
-                        .toList(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // Batch dropdown
-                DropdownButtonFormField<ProductBatch>(
-                  decoration: const InputDecoration(labelText: 'Batch'),
-                  items: (selectedProduct?.batches ?? [])
-                      .map((b) => DropdownMenuItem<ProductBatch>(value: b, child: Text('${b.name} • MRP ₹${b.mrp.toStringAsFixed(2)} • Stock ${b.stock}')))
-                      .toList(),
-                  onChanged: (b) {
-                    dialogSetState(() {
-                      selectedBatch = b;
-                      if (b != null) {
-                        if (widget.billType == BillType.wholesale) {
-                          priceCtrl.text = b.sellingPrice.toStringAsFixed(2);
-                        } else {
-                          priceCtrl.text = b.mrp.toStringAsFixed(2);
-                        }
-                      }
-                    });
-                  },
-                  value: selectedBatch,
-                ),
-                const SizedBox(height: 12),
-                // Quantities for all units
-                if (selectedProduct != null) ...[
-                  ...qtyCtrls.entries.map((e) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8.0),
-                        child: TextField(
-                          controller: e.value,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(labelText: 'Quantity (${e.key})'),
-                        ),
-                      )),
-                  Row(
+          content: LayoutBuilder(
+            builder: (context, constraints) {
+              final maxW = constraints.maxWidth;
+              final dialogW = maxW.clamp(320.0, 600.0);
+              return ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: dialogW),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Expanded(
-                        child: TextField(
-                          controller: priceCtrl,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Unit Price (per base unit)'),
+                      // Product search
+                      TextField(
+                        controller: searchCtrl,
+                        decoration: InputDecoration(
+                          labelText: 'Search Product',
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.add_circle_outline),
+                            tooltip: 'Add new product',
+                            onPressed: () async {
+                              await Get.toNamed('/products/new');
+                              // refresh products after returning
+                              _productController.loadProducts();
+                              dialogSetState(() {});
+                            },
+                          ),
+                        ),
+                        onChanged: (_) => dialogSetState(() {}),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 150,
+                        child: ListView(
+                          children: _productController.products
+                              .where((p) => p.name.toLowerCase().contains(searchCtrl.text.toLowerCase()))
+                              .map((p) => ListTile(
+                                    title: Text(p.name),
+                                    subtitle: Text(p.barcode ?? ''),
+                                    onTap: () {
+                                      dialogSetState(() {
+                                        selectedProduct = p;
+                                        selectedBatch = p.batches.isNotEmpty ? p.batches.first : null;
+                                        baseUnit = p.primaryUnit;
+                                        qtyCtrls.clear();
+                                        if (baseUnit != null) qtyCtrls[baseUnit!] = TextEditingController(text: '0');
+                                        for (final uc in p.unitConversions) {
+                                          qtyCtrls[uc.convertedUnit] = TextEditingController(text: '0');
+                                        }
+                                        if (selectedBatch != null) {
+                                          final isEstimate = (Get.arguments is Map && (Get.arguments['estimate'] == true));
+                                          if (widget.billType == BillType.wholesale || isEstimate) {
+                                            priceCtrl.text = selectedBatch!.sellingPrice.toStringAsFixed(2);
+                                          } else {
+                                            priceCtrl.text = selectedBatch!.mrp.toStringAsFixed(2);
+                                          }
+                                        } else {
+                                          priceCtrl.text = '0';
+                                        }
+                                      });
+                                    },
+                                  ))
+                              .toList(),
                         ),
                       ),
+                      // Add new unit for selected product
+                      if (selectedProduct != null) Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () async {
+                            final unitCtrl = TextEditingController();
+                            final factorCtrl = TextEditingController();
+                            bool largerThanBase = true;
+                            final base = selectedProduct!.primaryUnit;
+                            final res = await showDialog<UnitConversion>(
+                              context: context,
+                              builder: (context) => StatefulBuilder(
+                                builder: (context, setS) => AlertDialog(
+                                  title: const Text('Create Unit'),
+                                  content: SingleChildScrollView(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        TextField(controller: unitCtrl, decoration: const InputDecoration(labelText: 'Unit name')),
+                                        const SizedBox(height: 8),
+                                        Row(children: [
+                                          const Text('Unit larger than base'),
+                                          const SizedBox(width: 8),
+                                          Switch(value: largerThanBase, onChanged: (v){ setS(()=> largerThanBase = v); }),
+                                        ]),
+                                        TextField(
+                                          controller: factorCtrl,
+                                          keyboardType: TextInputType.number,
+                                          decoration: InputDecoration(
+                                            labelText: largerThanBase
+                                              ? 'How many $base in 1 <unit>?' : 'How many <unit> in 1 $base?'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  actions: [
+                                    TextButton(onPressed: ()=> Navigator.pop(context), child: const Text('Cancel')),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        final name = unitCtrl.text.trim();
+                                        final val = double.tryParse(factorCtrl.text.trim());
+                                        if (name.isNotEmpty && val != null && val > 0) {
+                                          final factor = largerThanBase ? val : (1/val);
+                                          Navigator.pop(context, UnitConversion(baseUnit: base, convertedUnit: name, conversionFactor: factor));
+                                        }
+                                      },
+                                      child: const Text('Add'),
+                                    )
+                                  ],
+                                ),
+                              ),
+                            );
+                            if (res != null) {
+                              // persist into DB and update controller
+                              final db = DatabaseService();
+                              final dbi = await db.database;
+                              await dbi.insert('unit_conversions', {
+                                'product_id': selectedProduct!.id,
+                                'base_unit': res.baseUnit,
+                                'converted_unit': res.convertedUnit,
+                                'conversion_factor': res.conversionFactor,
+                              }, conflictAlgorithm: ConflictAlgorithm.replace);
+                              await _productController.loadProducts();
+                              dialogSetState(() {
+                                // reinitialize qty controls to include new unit
+                                qtyCtrls[res.convertedUnit] = TextEditingController(text: '0');
+                              });
+                            }
+                          },
+                          icon: const Icon(Icons.straighten),
+                          label: const Text('Create New Unit'),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // Batch dropdown
+                      DropdownButtonFormField<ProductBatch>(
+                        decoration: const InputDecoration(labelText: 'Batch'),
+                        items: (selectedProduct?.batches ?? [])
+                            .map((b) => DropdownMenuItem<ProductBatch>(value: b, child: Text('${b.name} • MRP ₹${b.mrp.toStringAsFixed(2)} • Stock ${b.stock}')))
+                            .toList(),
+                        onChanged: (b) {
+                          dialogSetState(() {
+                            selectedBatch = b;
+                            if (b != null) {
+                              if (widget.billType == BillType.wholesale) {
+                                priceCtrl.text = b.sellingPrice.toStringAsFixed(2);
+                              } else {
+                                priceCtrl.text = b.mrp.toStringAsFixed(2);
+                              }
+                            }
+                          });
+                        },
+                        value: selectedBatch,
+                      ),
+                      const SizedBox(height: 12),
+                      // Quantities for all units
+                      if (selectedProduct != null) ...[
+                        ...qtyCtrls.entries.map((e) => Padding(
+                              padding: const EdgeInsets.only(bottom: 8.0),
+                              child: TextField(
+                                controller: e.value,
+                                keyboardType: TextInputType.number,
+                                decoration: InputDecoration(labelText: 'Quantity (${e.key})'),
+                              ),
+                            )),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: priceCtrl,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(labelText: 'Unit Price (per base unit)'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      if (widget.billType == BillType.wholesale) ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: discCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'Discount % (optional)'),
+                        ),
+                      ],
                     ],
                   ),
-                ],
-                if (widget.billType == BillType.wholesale) ...[
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: discCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Discount % (optional)'),
-                  ),
-                ],
-              ],
-            ),
+                ),
+              );
+            },
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
@@ -400,6 +629,9 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
                     cgst: widget.billType == BillType.wholesale && _gstEnabled ? (selectedProduct!.gstPercentage / 2) : null,
                     sgst: widget.billType == BillType.wholesale && _gstEnabled ? (selectedProduct!.gstPercentage / 2) : null,
                     discountPercent: widget.billType == BillType.wholesale ? (discount ?? 0) : null,
+                    // Initialize per-bill overrides from chosen batch
+                    mrpOverride: selectedBatch?.mrp,
+                    expiryOverride: selectedBatch?.expiryDate,
                   ));
                 });
                 Navigator.pop(context);
@@ -438,17 +670,10 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
     } else {
       await _billController.addBill(bill);
     }
-    // Deduct stock only for completed bills
-    if (bill.status == BillStatus.completed) {
-      final db = DatabaseService();
-      for (final it in _items) {
-        if (it.batchId != null) {
-          final delta = -it.quantity.round();
-          await db.adjustBatchStock(batchId: it.batchId!, delta: delta);
-        }
-      }
-    }
-    Get.back();
+    await _billController.loadBills();
+    Get.snackbar('Success', 'Bill saved successfully', snackPosition: SnackPosition.BOTTOM);
+    await Future.delayed(const Duration(milliseconds: 500));
+    Get.offAll(() => const BillingScreen());
   }
 
   void _previewEstimate() {
@@ -458,6 +683,34 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
     }
     Get.back();
     Get.snackbar('Estimate', 'Estimate generated (not saved as bill)', snackPosition: SnackPosition.BOTTOM);
+  }
+
+  Future<void> _saveEstimate() async {
+    if (_items.isEmpty) {
+      Get.snackbar('Error', 'Please add at least one item');
+      return;
+    }
+    final totals = _computeTotals();
+    final bill = Bill(
+      id: _isEdit ? _editBillId : DateTime.now().millisecondsSinceEpoch.toString(),
+      date: DateTime.now(),
+      type: widget.billType, // retail UI pricing, but notes marks this as estimate
+      customerId: _customerId,
+      customerName: (_customerNameController.text.isEmpty ? 'Customer' : _customerNameController.text),
+      items: _items,
+      totalAmount: totals['grand']!,
+      status: BillStatus.draft,
+      notes: 'estimate',
+    );
+    if (_isEdit) {
+      await _billController.updateBill(bill);
+    } else {
+      await _billController.addBill(bill);
+    }
+    await _billController.loadBills();
+    Get.snackbar('Saved', 'Estimate saved', snackPosition: SnackPosition.BOTTOM);
+    await Future.delayed(const Duration(milliseconds: 400));
+    Get.offAll(() => const BillingScreen());
   }
 
   double _computeLineTotal(BillItem item) {
@@ -679,6 +932,9 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
     } else {
       await _billController.addBill(bill);
     }
+    await _billController.loadBills();
+    Get.snackbar('Saved as Draft', 'Draft saved successfully', snackPosition: SnackPosition.BOTTOM);
+    await Future.delayed(const Duration(milliseconds: 500));
     Get.back();
   }
 
@@ -686,5 +942,8 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
     _items.clear();
     setState(() {});
     Get.snackbar('Discarded', 'Bill discarded');
+    Future.delayed(const Duration(milliseconds: 300), () {
+      Get.offAll(() => const BillingScreen());
+    });
   }
 }

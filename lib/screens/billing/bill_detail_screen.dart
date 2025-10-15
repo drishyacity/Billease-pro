@@ -134,9 +134,36 @@ class BillDetailScreen extends StatelessWidget {
                 final item = bill.items[index];
                 return ListTile(
                   title: Text(item.productName),
-                  subtitle: Text('${item.quantity} x \$${item.unitPrice.toStringAsFixed(2)}'),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${item.quantity} x ₹${item.unitPrice.toStringAsFixed(2)}'),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 16,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          const Text('MRP: '),
+                          Text(
+                            item.mrpOverride != null
+                                ? '₹${(item.mrpOverride!).toStringAsFixed(2)}'
+                                : '—',
+                            style: const TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                          const Text('Expiry: '),
+                          Text(
+                            item.expiryOverride == null
+                                ? '—'
+                                : '${item.expiryOverride!.day}/${item.expiryOverride!.month}/${item.expiryOverride!.year}',
+                            style: const TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                   trailing: Text(
-                    '\$${(item.quantity * item.unitPrice).toStringAsFixed(2)}',
+                    '₹${(item.quantity * item.unitPrice).toStringAsFixed(2)}',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                     ),
@@ -170,7 +197,7 @@ class BillDetailScreen extends StatelessWidget {
               children: [
                 const Text('Total Amount:'),
                 Text(
-                  '\$${bill.totalAmount.toStringAsFixed(2)}',
+                  '₹${bill.totalAmount.toStringAsFixed(2)}',
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 18,

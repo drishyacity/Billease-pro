@@ -5,6 +5,11 @@ import '../../models/bill_model.dart';
 import 'bill_detail_screen.dart';
 import 'bill_creation_screen.dart';
 import '../../widgets/loading_widget.dart';
+// Bill history is only available from the dashboard now
+import '../settings/settings_screen.dart';
+import '../dashboard/dashboard_screen.dart';
+import '../customers/customer_list_screen.dart';
+import '../products/product_list_screen.dart';
 
 class BillingScreen extends StatefulWidget {
   final String? initialBillType;
@@ -17,20 +22,17 @@ class BillingScreen extends StatefulWidget {
   State<BillingScreen> createState() => _BillingScreenState();
 }
 
-class _BillingScreenState extends State<BillingScreen> with SingleTickerProviderStateMixin {
+class _BillingScreenState extends State<BillingScreen> {
   final BillController billController = Get.find();
-  late TabController _tabController;
   
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this, initialIndex: widget.initialTabIndex ?? 0);
     billController.loadBills();
   }
   
   @override
   void dispose() {
-    _tabController.dispose();
     super.dispose();
   }
 
@@ -39,21 +41,40 @@ class _BillingScreenState extends State<BillingScreen> with SingleTickerProvider
     return Scaffold(
       appBar: AppBar(
         title: const Text('Billing'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Create Bill'),
-            Tab(text: 'Bill History'),
-          ],
-        ),
+        elevation: 2,
+        actions: [
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings),
+            onPressed: () => Get.to(() => const SettingsScreen()),
+          ),
+        ],
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildCreateBillOptions(),
-          _buildBillList(),
+      body: _buildCreateBillOptions(),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: 3,
+        onTap: (index) {
+          switch (index) {
+            case 0:
+              Get.offAll(() => const DashboardScreen());
+              break;
+            case 1:
+              Get.offAll(() => const CustomerListScreen());
+              break;
+            case 2:
+              Get.offAll(() => ProductListScreen());
+              break;
+            case 3:
+              // Already on Billing
+              break;
+          }
+        },
+        type: BottomNavigationBarType.fixed,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Dashboard'),
+          BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Customers'),
+          BottomNavigationBarItem(icon: Icon(Icons.inventory), label: 'Products'),
+          BottomNavigationBarItem(icon: Icon(Icons.receipt), label: 'Billing'),
         ],
       ),
     );
@@ -238,7 +259,7 @@ class _BillingScreenState extends State<BillingScreen> with SingleTickerProvider
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Text(
-              '₹${bill.totalAmount}',
+              '₹${bill.totalAmount.toStringAsFixed(2)}',
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 16,

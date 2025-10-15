@@ -24,7 +24,7 @@ class ProductController extends GetxController {
     loadProducts();
   }
 
-  void loadProducts() async {
+  Future<void> loadProducts() async {
     isLoading.value = true;
     try {
       final db = DatabaseService();
@@ -141,6 +141,8 @@ class ProductController extends GetxController {
       filtered = filtered.where((p) => p.hasExpiredBatches()).toList();
     }
 
+    // Sort alphabetically by product name
+    filtered.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     _filteredProducts.value = filtered.toList();
   }
 

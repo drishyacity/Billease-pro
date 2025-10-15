@@ -44,8 +44,15 @@ class DatabaseService {
     final dbPath = p.join(docsDir.path, 'billease_pro.db');
     return await openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          // Add per-bill override fields to bill_items
+          await db.execute('ALTER TABLE bill_items ADD COLUMN mrp_override REAL');
+          await db.execute('ALTER TABLE bill_items ADD COLUMN expiry_override TEXT');
+        }
+      },
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -170,6 +177,8 @@ class DatabaseService {
         cgst REAL,
         sgst REAL,
         discount_percent REAL,
+        mrp_override REAL,
+        expiry_override TEXT,
         FOREIGN KEY(bill_id) REFERENCES bills(id) ON DELETE CASCADE,
         FOREIGN KEY(product_id) REFERENCES products(id),
         FOREIGN KEY(batch_id) REFERENCES batches(id)
@@ -384,6 +393,8 @@ class DatabaseService {
           'cgst': item['cgst'],
           'sgst': item['sgst'],
           'discount_percent': item['discount_percent'],
+          'mrp_override': item['mrp_override'],
+          'expiry_override': item['expiry_override'],
         };
         await txn.insert('bill_items', itemData, conflictAlgorithm: ConflictAlgorithm.replace);
       }
