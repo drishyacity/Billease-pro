@@ -12,6 +12,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:file_saver/file_saver.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../services/database_service.dart';
 
 class ProductListScreen extends StatelessWidget {
@@ -27,6 +30,24 @@ class ProductListScreen extends StatelessWidget {
     if (v is num) return ex.DoubleCellValue(v.toDouble());
     if (v is DateTime) return ex.TextCellValue(v.toIso8601String().split('T').first);
     return ex.TextCellValue(v.toString());
+  }
+
+  Future<String?> _getSaveFilePath({
+    required String suggestedFileName,
+    required List<String> allowedExtensions,
+    required String dialogTitle,
+  }) async {
+    // Windows: let user choose location
+    if (Platform.isWindows) {
+      return await FilePicker.platform.saveFile(
+        dialogTitle: dialogTitle,
+        fileName: suggestedFileName,
+        type: FileType.custom,
+        allowedExtensions: allowedExtensions,
+      );
+    }
+    // Non-Windows: we'll use FileSaver instead of returning a path
+    return null;
   }
 
   @override
@@ -279,7 +300,7 @@ class ProductListScreen extends StatelessWidget {
   Future<void> _exportAsPdf(BuildContext context) async {
     try {
       final pdf = pw.Document();
-      final headers = ['Name','Barcode','Category','Unit','MRP','Selling Price','Cost Price','Stock'];
+      final headers = ['Name','Barcode','Category','Unit','MRP','Selling Price','Cost Price','Stock','Expiry'];
       final rows = productController.products.map((p) {
         final first = p.batches.isNotEmpty ? p.batches.first : null;
         return [
@@ -291,6 +312,7 @@ class ProductListScreen extends StatelessWidget {
           first?.sellingPrice.toStringAsFixed(2) ?? '',
           first?.costPrice.toStringAsFixed(2) ?? '',
           p.totalStock.toString(),
+          first?.expiryDate?.toIso8601String().split('T').first ?? '',
         ];
       }).toList();
       pdf.addPage(
@@ -303,10 +325,41 @@ class ProductListScreen extends StatelessWidget {
           ],
         ),
       );
-      final dir = await getTemporaryDirectory();
-      final file = File(p.join(dir.path, 'products_export.pdf'));
-      await file.writeAsBytes(await pdf.save());
-      await Printing.sharePdf(bytes: await file.readAsBytes(), filename: 'products_export.pdf');
+      if (Platform.isWindows) {
+        final savePath = await _getSaveFilePath(
+          suggestedFileName: 'products_export.pdf',
+          allowedExtensions: const ['pdf'],
+          dialogTitle: 'Save Products PDF',
+        );
+        if (savePath == null) return; // canceled
+        final file = File(savePath);
+        await file.writeAsBytes(await pdf.save(), flush: true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('PDF saved to ${file.path}')),
+        );
+      } else {
+        final bytes = await pdf.save();
+        final res = await FileSaver.instance.saveFile(
+          name: 'products_export',
+          bytes: Uint8List.fromList(bytes),
+          ext: 'pdf',
+          mimeType: MimeType.pdf,
+        );
+        final savedPath = res?.toString() ?? '';
+        if (savedPath.isEmpty || savedPath.contains('/Android/data/')) {
+          // Fallback: open share sheet so user can save to Downloads explicitly
+          await Share.shareXFiles([
+            XFile.fromData(Uint8List.fromList(bytes), name: 'products_export.pdf', mimeType: 'application/pdf'),
+          ], text: 'Save to Downloads');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Choose Downloads in the share dialog to save the file.')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('PDF saved successfully.')),
+          );
+        }
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to export PDF: $e')),
@@ -317,7 +370,13 @@ class ProductListScreen extends StatelessWidget {
   Future<void> _exportAsExcel(BuildContext context) async {
     try {
       final excel = ex.Excel.createExcel();
-      final sheet = excel['Products'];
+      const sheetName = 'Products';
+      // Use default sheet by renaming it so viewers open the populated sheet
+      if (excel.sheets.keys.contains('Sheet1')) {
+        excel.rename('Sheet1', sheetName);
+      }
+      excel.setDefaultSheet(sheetName);
+      final sheet = excel[sheetName];
       final headers = ['name','barcode','category','unit','cost_price','selling_price','mrp','stock','expiry_date'];
       sheet.appendRow(headers.map<ex.CellValue?>((h) => ex.TextCellValue(h)).toList());
       for (final p in productController.products) {
@@ -336,12 +395,39 @@ class ProductListScreen extends StatelessWidget {
         sheet.appendRow(row.map<ex.CellValue?>((e) => _toCellValue(e)).toList());
       }
       final bytes = excel.encode()!;
-      final dir = await getTemporaryDirectory();
-      final file = File(p.join(dir.path, 'products_export.xlsx'));
-      await file.writeAsBytes(bytes, flush: true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Excel saved to ${file.path}')),
-      );
+      if (Platform.isWindows) {
+        final savePath = await _getSaveFilePath(
+          suggestedFileName: 'products_export.xlsx',
+          allowedExtensions: const ['xlsx'],
+          dialogTitle: 'Save Products Excel',
+        );
+        if (savePath == null) return; // canceled
+        final file = File(savePath);
+        await file.writeAsBytes(bytes, flush: true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Excel saved to ${file.path}')),
+        );
+      } else {
+        final res = await FileSaver.instance.saveFile(
+          name: 'products_export',
+          bytes: Uint8List.fromList(bytes),
+          ext: 'xlsx',
+          mimeType: MimeType.microsoftExcel,
+        );
+        final savedPath = res?.toString() ?? '';
+        if (savedPath.isEmpty || savedPath.contains('/Android/data/')) {
+          await Share.shareXFiles([
+            XFile.fromData(Uint8List.fromList(bytes), name: 'products_export.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+          ], text: 'Save to Downloads');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Choose Downloads in the share dialog to save the file.')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Excel saved successfully.')),
+          );
+        }
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to export Excel: $e')),
@@ -352,18 +438,50 @@ class ProductListScreen extends StatelessWidget {
   Future<void> _downloadSampleExcel(BuildContext context) async {
     try {
       final excel = ex.Excel.createExcel();
-      final sheet = excel['Products'];
+      const sheetName = 'Products';
+      if (excel.sheets.keys.contains('Sheet1')) {
+        excel.rename('Sheet1', sheetName);
+      }
+      excel.setDefaultSheet(sheetName);
+      final sheet = excel[sheetName];
       final headers = ['name','barcode','category','unit','cost_price','selling_price','mrp','stock','expiry_date'];
       sheet.appendRow(headers.map((h) => ex.TextCellValue(h)).toList());
       final sample = ['Paracetamol 500mg','8901234567890','Medicines','piece',1.5,2.0,2.5,100,'2026-03-31'];
       sheet.appendRow(sample.map<ex.CellValue?>((e) => _toCellValue(e)).toList());
       final bytes = excel.encode()!;
-      final dir = await getTemporaryDirectory();
-      final file = File(p.join(dir.path, 'products_sample.xlsx'));
-      await file.writeAsBytes(bytes, flush: true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Sample saved to ${file.path}')),
-      );
+      if (Platform.isWindows) {
+        final savePath = await _getSaveFilePath(
+          suggestedFileName: 'products_sample.xlsx',
+          allowedExtensions: const ['xlsx'],
+          dialogTitle: 'Save Sample Excel',
+        );
+        if (savePath == null) return; // canceled
+        final file = File(savePath);
+        await file.writeAsBytes(bytes, flush: true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sample saved to ${file.path}')),
+        );
+      } else {
+        final res = await FileSaver.instance.saveFile(
+          name: 'products_sample',
+          bytes: Uint8List.fromList(bytes),
+          ext: 'xlsx',
+          mimeType: MimeType.microsoftExcel,
+        );
+        final savedPath = res?.toString() ?? '';
+        if (savedPath.isEmpty || savedPath.contains('/Android/data/')) {
+          await Share.shareXFiles([
+            XFile.fromData(Uint8List.fromList(bytes), name: 'products_sample.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+          ], text: 'Save to Downloads');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Choose Downloads in the share dialog to save the file.')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Sample saved successfully.')),
+          );
+        }
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to create sample: $e')),

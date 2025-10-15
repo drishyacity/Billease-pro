@@ -21,6 +21,24 @@ class DatabaseService {
     return db.query('batches', where: 'product_id = ?', whereArgs: [productId]);
   }
 
+  Future<Map<String, dynamic>?> getBatchById(String batchId) async {
+    final db = await database;
+    final rows = await db.query('batches', where: 'id = ?', whereArgs: [batchId], limit: 1);
+    if (rows.isEmpty) return null;
+    return rows.first;
+  }
+
+  Future<void> adjustBatchStock({required String batchId, required int delta}) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final rows = await txn.query('batches', where: 'id = ?', whereArgs: [batchId], limit: 1);
+      if (rows.isEmpty) return;
+      final current = (rows.first['stock'] as int?) ?? 0;
+      final newStock = current + delta; // delta negative to deduct
+      await txn.update('batches', {'stock': newStock}, where: 'id = ?', whereArgs: [batchId]);
+    });
+  }
+
   Future<Database> _initDb() async {
     final docsDir = await getApplicationDocumentsDirectory();
     final dbPath = p.join(docsDir.path, 'billease_pro.db');
@@ -337,6 +355,7 @@ class DatabaseService {
   Future<void> insertBill(Map<String, dynamic> bill, List<Map<String, dynamic>> items) async {
     final db = await database;
     await db.transaction((txn) async {
+      // Replace bill row
       final billData = <String, Object?>{
         'id': bill['id'],
         'date': bill['date'],
@@ -349,6 +368,8 @@ class DatabaseService {
         'notes': bill['notes'],
       };
       await txn.insert('bills', billData, conflictAlgorithm: ConflictAlgorithm.replace);
+      // Remove existing items for this bill to avoid duplicates on edit
+      await txn.delete('bill_items', where: 'bill_id = ?', whereArgs: [bill['id']]);
       for (final item in items) {
         final itemData = <String, Object?>{
           'id': item['id'],
@@ -372,6 +393,14 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> getBillItems(String billId) async {
     final db = await database;
     return db.query('bill_items', where: 'bill_id = ?', whereArgs: [billId]);
+  }
+
+  Future<void> deleteBillById(String billId) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('bill_items', where: 'bill_id = ?', whereArgs: [billId]);
+      await txn.delete('bills', where: 'id = ?', whereArgs: [billId]);
+    });
   }
 }
 

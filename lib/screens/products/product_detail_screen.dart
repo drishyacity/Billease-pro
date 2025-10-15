@@ -341,22 +341,20 @@ class ProductDetailScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Unit Conversions',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                const Expanded(
+                  child: Text(
+                    'Unit Conversions',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
                 TextButton.icon(
                   icon: const Icon(Icons.add),
                   label: const Text('Add Conversion'),
                   onPressed: () {
-                    // Implement add unit conversion functionality
-                    Get.snackbar(
-                      'Coming Soon',
-                      'Add unit conversion functionality will be implemented soon',
-                      snackPosition: SnackPosition.BOTTOM,
-                    );
+                    // Redirect to product edit screen to add units/conversions there
+                    Get.to(() => ProductFormScreen(product: product));
                   },
                 ),
               ],
@@ -380,6 +378,8 @@ class ProductDetailScreen extends StatelessWidget {
                     title: Text(
                       '1 ${conversion.convertedUnit} = ${conversion.conversionFactor} ${conversion.baseUnit}',
                       style: const TextStyle(fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete),

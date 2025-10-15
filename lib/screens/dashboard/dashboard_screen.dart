@@ -9,6 +9,7 @@ import '../bills/bill_history_screen.dart';
 import '../reports/reports_screen.dart';
 import '../settings/settings_screen.dart';
 import '../products/near_expiry_grouped_screen.dart';
+import '../../models/bill_model.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -83,7 +84,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     title: 'Products',
                     icon: Icons.inventory,
                     color: Colors.green,
-                    onTap: () => Get.to(() => ProductListScreen()),
+                    onTap: () {
+                      _productController.setStockExpiryFilters(lowStock: false, nearExpiry: false, expired: false);
+                      _productController.clearNearExpiryFilters();
+                      _productController.setCategoryFilter('');
+                      _productController.filterProducts('');
+                      Get.to(() => ProductListScreen());
+                    },
                   ),
                   _buildActionCard(
                     title: 'Bill History',
@@ -113,6 +120,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Obx(() {
               final today = DateTime.now();
               final todayTotal = _billController.bills
+                  .where((b) => b.status != BillStatus.draft)
                   .where((b) => b.date.year == today.year && b.date.month == today.month && b.date.day == today.day)
                   .fold<double>(0.0, (sum, b) => sum + b.totalAmount);
               final lowStockCount = _productController.products.where((p) => p.isLowStock).length;
@@ -242,6 +250,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                Get.to(() => const CustomerListScreen());
                break;
             case 2: // Products
+              _productController.setStockExpiryFilters(lowStock: false, nearExpiry: false, expired: false);
+              _productController.clearNearExpiryFilters();
+              _productController.setCategoryFilter('');
+              _productController.filterProducts('');
               Get.to(() => ProductListScreen());
               break;
             case 3: // Billing

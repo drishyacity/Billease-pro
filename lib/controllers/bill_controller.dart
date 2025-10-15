@@ -84,17 +84,23 @@ class BillController extends GetxController {
   Future<void> updateBill(Bill bill) async {
     _isLoading.value = true;
     try {
-      // Simulate updating in database
-      await Future.delayed(const Duration(milliseconds: 500));
+      final db = DatabaseService();
+      await db.insertBill(
+        bill.toJson(),
+        bill.items.map((e) => e.toJson()..['bill_id'] = bill.id).toList(),
+      );
       final index = _bills.indexWhere((b) => b.id == bill.id);
       if (index != -1) {
         _bills[index] = bill;
-        Get.snackbar(
-          'Success',
-          'Bill updated successfully',
-          snackPosition: SnackPosition.BOTTOM,
-        );
+      } else {
+        _bills.add(bill);
       }
+      _filteredBills.value = _bills;
+      Get.snackbar(
+        'Success',
+        'Bill updated successfully',
+        snackPosition: SnackPosition.BOTTOM,
+      );
     } catch (e) {
       Get.snackbar(
         'Error',
@@ -109,9 +115,10 @@ class BillController extends GetxController {
   Future<void> deleteBill(String id) async {
     _isLoading.value = true;
     try {
-      // Simulate deleting from database
-      await Future.delayed(const Duration(milliseconds: 500));
+      final db = DatabaseService();
+      await db.deleteBillById(id);
       _bills.removeWhere((bill) => bill.id == id);
+      _filteredBills.value = _bills;
       Get.snackbar(
         'Success',
         'Bill deleted successfully',
