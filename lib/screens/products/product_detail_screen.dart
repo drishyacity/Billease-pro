@@ -64,7 +64,7 @@ class ProductDetailScreen extends StatelessWidget {
                 TextField(controller: cp, decoration: const InputDecoration(labelText: 'Cost Price'), keyboardType: TextInputType.number),
                 TextField(controller: sp, decoration: const InputDecoration(labelText: 'Selling Price'), keyboardType: TextInputType.number),
                 TextField(controller: mrp, decoration: const InputDecoration(labelText: 'MRP'), keyboardType: TextInputType.number),
-                TextField(controller: stock, decoration: const InputDecoration(labelText: 'Stock'), keyboardType: TextInputType.number),
+                TextField(controller: stock, decoration: const InputDecoration(labelText: 'Stock (can be decimal)'), keyboardType: TextInputType.number),
                 const SizedBox(height: 12),
                 InkWell(
                   onTap: () async {
@@ -89,38 +89,57 @@ class ProductDetailScreen extends StatelessWidget {
             ElevatedButton(
               onPressed: () async {
                 final db = DatabaseService();
-                // If editing 'New', roll previous 'New' values into 'Old' before updating
-                if (batch.name.toLowerCase() == 'new') {
-                  ProductBatch? oldBatch;
-                  for (final b in product.batches) {
-                    if (b.name.toLowerCase() == 'old') { oldBatch = b; break; }
+                final dbi = await db.database;
+                await dbi.transaction((txn) async {
+                  // If editing 'New', roll previous 'New' values into 'Old' atomically using current DB values
+                  if (batch.name.toLowerCase() == 'new') {
+                    final newRows = await txn.query('batches', where: 'id = ?', whereArgs: [batch.id], limit: 1);
+                    final prevNew = newRows.isNotEmpty ? newRows.first : null;
+                    final double prevNewStock = (prevNew == null) ? batch.stock : ((prevNew['stock'] as num?)?.toDouble() ?? 0.0);
+                    final olds = await txn.query(
+                      'batches',
+                      where: 'product_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?))',
+                      whereArgs: [product.id, 'Old'],
+                      limit: 1,
+                    );
+                    if (olds.isNotEmpty) {
+                      // OVERWRITE: set OLD to previous NEW values (decimal safe)
+                      final oldRow = olds.first;
+                      await txn.update('batches', {
+                        'stock': prevNewStock,
+                        'cost_price': prevNew?['cost_price'] ?? batch.costPrice,
+                        'selling_price': prevNew?['selling_price'] ?? batch.sellingPrice,
+                        'mrp': prevNew?['mrp'] ?? batch.mrp,
+                        'expiry_date': prevNew?['expiry_date'] ?? batch.expiryDate?.toIso8601String(),
+                      }, where: 'id = ?', whereArgs: [oldRow['id']]);
+                    } else {
+                      // Create OLD from previous NEW values
+                      await txn.insert('batches', {
+                        'id': 'BATCH_${product.id}_OLD',
+                        'product_id': product.id,
+                        'name': 'Old',
+                        'cost_price': prevNew?['cost_price'] ?? batch.costPrice,
+                        'selling_price': prevNew?['selling_price'] ?? batch.sellingPrice,
+                        'mrp': prevNew?['mrp'] ?? batch.mrp,
+                        'expiry_date': prevNew?['expiry_date'] ?? batch.expiryDate?.toIso8601String(),
+                        'stock': prevNewStock,
+                      });
+                    }
                   }
-                  if (oldBatch != null) {
-                    await db.updateBatch({
-                      'id': oldBatch.id,
-                      'product_id': product.id,
-                      'name': oldBatch.name,
-                      'cost_price': batch.costPrice,
-                      'selling_price': batch.sellingPrice,
-                      'mrp': batch.mrp,
-                      'expiry_date': batch.expiryDate?.toIso8601String(),
-                      'stock': batch.stock,
-                    });
-                  }
-                }
-                await db.updateBatch({
-                  'id': batch.id,
-                  'product_id': product.id,
-                  'name': name.text.trim().isEmpty ? batch.name : name.text.trim(),
-                  'cost_price': double.tryParse(cp.text) ?? batch.costPrice,
-                  'selling_price': double.tryParse(sp.text) ?? batch.sellingPrice,
-                  'mrp': double.tryParse(mrp.text) ?? batch.mrp,
-                  'expiry_date': expiry?.toIso8601String(),
-                  'stock': int.tryParse(stock.text) ?? batch.stock,
+                  // Update NEW (or any batch) with edited values
+                  await txn.update('batches', {
+                    'product_id': product.id,
+                    'name': name.text.trim().isEmpty ? batch.name : name.text.trim(),
+                    'cost_price': double.tryParse(cp.text) ?? batch.costPrice,
+                    'selling_price': double.tryParse(sp.text) ?? batch.sellingPrice,
+                    'mrp': double.tryParse(mrp.text) ?? batch.mrp,
+                    'expiry_date': expiry?.toIso8601String(),
+                    'stock': double.tryParse(stock.text) ?? batch.stock,
+                  }, where: 'id = ?', whereArgs: [batch.id]);
                 });
-                productController.loadProducts();
+                await productController.loadProducts();
                 Navigator.pop(context);
-                Get.snackbar('Saved', 'Batch updated', snackPosition: SnackPosition.BOTTOM);
+                Get.snackbar('Saved', 'Batch updated', snackPosition: SnackPosition.TOP);
               },
               child: const Text('Save'),
             ),
@@ -233,7 +252,7 @@ class ProductDetailScreen extends StatelessWidget {
                                     onPressed: () async {
                                       await DatabaseService().deleteBatchById(batch.id);
                                       productController.loadProducts();
-                                      Get.snackbar('Deleted', 'Batch removed', snackPosition: SnackPosition.BOTTOM);
+                                      Get.snackbar('Deleted', 'Batch removed', snackPosition: SnackPosition.TOP);
                                     },
                                   ),
                                 ],
@@ -286,7 +305,7 @@ class ProductDetailScreen extends StatelessWidget {
                 TextField(controller: cp, decoration: const InputDecoration(labelText: 'Cost Price'), keyboardType: TextInputType.number),
                 TextField(controller: sp, decoration: const InputDecoration(labelText: 'Selling Price'), keyboardType: TextInputType.number),
                 TextField(controller: mrp, decoration: const InputDecoration(labelText: 'MRP'), keyboardType: TextInputType.number),
-                TextField(controller: stock, decoration: const InputDecoration(labelText: 'Opening Stock'), keyboardType: TextInputType.number),
+                TextField(controller: stock, decoration: const InputDecoration(labelText: 'Opening Stock (can be decimal)'), keyboardType: TextInputType.number),
                 const SizedBox(height: 12),
                 InkWell(
                   onTap: () async {
@@ -319,11 +338,11 @@ class ProductDetailScreen extends StatelessWidget {
                   'selling_price': double.tryParse(sp.text) ?? 0.0,
                   'mrp': double.tryParse(mrp.text) ?? 0.0,
                   'expiry_date': expiry?.toIso8601String(),
-                  'stock': int.tryParse(stock.text) ?? 0,
+                  'stock': double.tryParse(stock.text) ?? 0.0,
                 });
                 productController.loadProducts();
                 Navigator.pop(context);
-                Get.snackbar('Success', 'Batch added', snackPosition: SnackPosition.BOTTOM);
+                Get.snackbar('Success', 'Batch added', snackPosition: SnackPosition.TOP);
               },
               child: const Text('Add'),
             ),
@@ -388,7 +407,7 @@ class ProductDetailScreen extends StatelessWidget {
                         Get.snackbar(
                           'Coming Soon',
                           'Delete unit conversion functionality will be implemented soon',
-                          snackPosition: SnackPosition.BOTTOM,
+                          snackPosition: SnackPosition.TOP,
                         );
                       },
                     ),
@@ -504,15 +523,26 @@ class ProductDetailScreen extends StatelessWidget {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
-              productController.deleteProduct(product.id);
-              Navigator.pop(context);
-              Get.back();
-              Get.snackbar(
-                'Product Deleted',
-                '${product.name} has been deleted successfully',
-                snackPosition: SnackPosition.BOTTOM,
-              );
+            onPressed: () async {
+              try {
+                await productController.deleteProduct(product.id);
+                Navigator.pop(context);
+                Get.back();
+                Get.snackbar(
+                  'Product Deleted',
+                  '${product.name} has been deleted successfully',
+                  snackPosition: SnackPosition.TOP,
+                );
+              } catch (e) {
+                Navigator.pop(context);
+                Get.snackbar(
+                  'Delete Failed',
+                  'Unable to delete ${product.name}. It may be referenced in existing bills.',
+                  snackPosition: SnackPosition.TOP,
+                  backgroundColor: Colors.red.shade700,
+                  colorText: Colors.white,
+                );
+              }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Delete'),

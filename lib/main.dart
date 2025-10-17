@@ -10,6 +10,9 @@ import 'package:billease_pro/constants/app_constants.dart';
 import 'package:billease_pro/controllers/bill_controller.dart';
 import 'package:billease_pro/controllers/product_controller.dart';
 import 'package:billease_pro/controllers/customer_controller.dart';
+import 'services/supabase_service.dart';
+import 'screens/dashboard/dashboard_screen.dart';
+import 'screens/onboarding/onboarding_basic_details_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,10 +21,16 @@ void main() async {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
+  await SupabaseService().initialize(
+    url: 'https://jztnzcjxzavnkjfdlxov.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6dG56Y2p4emF2bmtqZmRseG92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA1MDIxNTUsImV4cCI6MjA3NjA3ODE1NX0.k7B-c2PUWOLEwuVGSCfzGn-tCkVw-Fw_hG875-JbA7k',
+  );
+  await DatabaseService().setCurrentUser(SupabaseService().currentUserId);
   // Init local database
   await DatabaseService().database;
   // Start auto-backups
   await BackupService().startAutoBackup();
+  await BackupService().startNetworkSync();
   
   // Initialize controllers
   Get.put(BillController());
@@ -39,17 +48,39 @@ class MyApp extends StatelessWidget {
     return GetMaterialApp(
       title: AppConstants.appName,
       theme: AppTheme.lightTheme(),
-      home: FutureBuilder(
-        future: DatabaseService().getCompanyProfile(),
+      home: StreamBuilder(
+        stream: SupabaseService().authStateChanges,
         builder: (context, snapshot) {
-          // If company profile is not set, direct to signup -> onboarding
-          if (snapshot.connectionState != ConnectionState.done) {
+          final user = SupabaseService().currentUser;
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(body: Center(child: CircularProgressIndicator()));
           }
-          if (snapshot.data == null) {
+          if (user == null) {
+            DatabaseService().setCurrentUser(null);
             return const LoginScreen();
           }
-          return const LoginScreen();
+          DatabaseService().setCurrentUser(user.id);
+          try {
+            Get.find<ProductController>().loadInitialProducts();
+          } catch (_) {}
+          try {
+            Get.find<BillController>().loadBills();
+          } catch (_) {}
+          try {
+            Get.find<CustomerController>(); // add reload method if present
+          } catch (_) {}
+          return FutureBuilder(
+            future: DatabaseService().getCompanyProfile(),
+            builder: (context, profSnap) {
+              if (profSnap.connectionState != ConnectionState.done) {
+                return const Scaffold(body: Center(child: CircularProgressIndicator()));
+              }
+              if (profSnap.data == null) {
+                return const OnboardingBasicDetailsScreen();
+              }
+              return const DashboardScreen();
+            },
+          );
         },
       ),
       debugShowCheckedModeBanner: false,

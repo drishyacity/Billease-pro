@@ -124,12 +124,26 @@ class ProductListScreen extends StatelessWidget {
                         ],
                       ),
                     )
-                  : ListView.builder(
-                      itemCount: productController.filteredProducts.length,
-                      itemBuilder: (context, index) {
-                        final product = productController.filteredProducts[index];
-                        return ProductListItem(product: product);
+                  : NotificationListener<ScrollNotification>(
+                      onNotification: (notification) {
+                        if (notification.metrics.pixels >= notification.metrics.maxScrollExtent - 200) {
+                          productController.loadMoreProducts();
+                        }
+                        return false;
                       },
+                      child: ListView.builder(
+                        itemCount: productController.filteredProducts.length + (productController.isLoadingMore.value ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index >= productController.filteredProducts.length) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 16),
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          }
+                          final product = productController.filteredProducts[index];
+                          return ProductListItem(product: product);
+                        },
+                      ),
                     ),
             ),
           ],
@@ -170,69 +184,88 @@ class ProductListScreen extends StatelessWidget {
   }
 
   void _showFilterDialog(BuildContext context) {
-    String? selectedCategory;
+    final selected = Set<String>.from(productController.selectedCategories);
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         title: const Text('Filter Products'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Category', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Obx(() {
-              final categories = ['All'] + productController.categories;
-              return Wrap(
-                spacing: 8,
-                children: categories.map((category) {
-                  final isSelected = category == 'All'
-                      ? productController.categoryFilter.value.isEmpty
-                      : productController.categoryFilter.value == category;
-                  
-                  return ChoiceChip(
-                    label: Text(category),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      if (selected) {
-                        selectedCategory = category == 'All' ? null : category;
+        content: SingleChildScrollView(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Category', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Obx(() {
+                final categories = productController.categories;
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: categories.map((category) {
+                    final isSelected = productController.selectedCategories.contains(category);
+                    return FilterChip(
+                      label: Text(category),
+                      selected: isSelected,
+                      onSelected: (v) {
+                        productController.toggleCategorySelection(category, v);
+                      },
+                    );
+                  }).toList(),
+                );
+              }),
+              Row(
+                children: [
+                  TextButton(
+                    onPressed: () => productController.clearCategorySelections(),
+                    child: const Text('Clear Categories'),
+                  ),
+                  const SizedBox(width: 12),
+                  TextButton(
+                    onPressed: () {
+                      for (final c in productController.categories) {
+                        if (!productController.selectedCategories.contains(c)) {
+                          productController.toggleCategorySelection(c, true);
+                        }
                       }
                     },
-                  );
-                }).toList(),
-              );
-            }),
-            const SizedBox(height: 16),
-            const Text('Stock Status', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Obx(() => Wrap(
-                  spacing: 8,
-                  children: [
-                    ChoiceChip(
-                      label: const Text('Low Stock'),
-                      selected: productController.lowStockOnly.value,
-                      onSelected: (selected) {
-                        productController.setStockExpiryFilters(lowStock: selected);
-                      },
-                    ),
-                    ChoiceChip(
-                      label: const Text('Near Expiry'),
-                      selected: productController.nearExpiryOnly.value,
-                      onSelected: (selected) {
-                        productController.setStockExpiryFilters(nearExpiry: selected);
-                      },
-                    ),
-                    ChoiceChip(
-                      label: const Text('Expired'),
-                      selected: productController.expiredOnly.value,
-                      onSelected: (selected) {
-                        productController.setStockExpiryFilters(expired: selected);
-                      },
-                    ),
-                  ],
-                )),
-          ],
+                    child: const Text('Select All'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Text('Stock Status', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Obx(() => Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Low Stock'),
+                        selected: productController.lowStockOnly.value,
+                        onSelected: (selected) {
+                          productController.setStockExpiryFilters(lowStock: selected);
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Near Expiry'),
+                        selected: productController.nearExpiryOnly.value,
+                        onSelected: (selected) {
+                          productController.setStockExpiryFilters(nearExpiry: selected);
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Expired'),
+                        selected: productController.expiredOnly.value,
+                        onSelected: (selected) {
+                          productController.setStockExpiryFilters(expired: selected);
+                        },
+                      ),
+                    ],
+                  )),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -241,9 +274,6 @@ class ProductListScreen extends StatelessWidget {
           ),
           ElevatedButton(
             onPressed: () {
-              // Apply even when 'All' is chosen (selectedCategory becomes null)
-              final cat = (selectedCategory == null || selectedCategory == 'All') ? '' : selectedCategory!;
-              productController.setCategoryFilter(cat);
               Navigator.pop(context);
             },
             child: const Text('Apply'),
@@ -333,8 +363,9 @@ class ProductListScreen extends StatelessWidget {
   Future<void> _exportAsPdf(BuildContext context) async {
     try {
       final pdf = pw.Document();
-      final headers = ['Name','Barcode','Category','Unit','MRP','Selling Price','Cost Price','Stock','Expiry'];
-      final rows = productController.products.map((p) {
+      final headers = ['Name','Barcode','Category','Unit','MRP','Selling Price','Cost Price','Stock','Expiry','CGST %','SGST %','Discount %'];
+      final list = productController.hasActiveFilters ? productController.filteredProducts : productController.products;
+      final rows = list.map((p) {
         final first = p.batches.isNotEmpty ? p.batches.first : null;
         return [
           p.name,
@@ -346,6 +377,9 @@ class ProductListScreen extends StatelessWidget {
           first?.costPrice.toStringAsFixed(2) ?? '',
           p.totalStock.toString(),
           first?.expiryDate?.toIso8601String().split('T').first ?? '',
+          p.cgstPercentage.toStringAsFixed(2),
+          p.sgstPercentage.toStringAsFixed(2),
+          p.discountPercentage.toStringAsFixed(2),
         ];
       }).toList();
       pdf.addPage(
@@ -410,9 +444,10 @@ class ProductListScreen extends StatelessWidget {
       }
       excel.setDefaultSheet(sheetName);
       final sheet = excel[sheetName];
-      final headers = ['name','barcode','category','unit','cost_price','selling_price','mrp','stock','expiry_date'];
+      final headers = ['name','barcode','category','unit','cost_price','selling_price','mrp','stock','expiry_date','cgst_percent','sgst_percent','discount_percent'];
       sheet.appendRow(headers.map<ex.CellValue?>((h) => ex.TextCellValue(h)).toList());
-      for (final p in productController.products) {
+      final list = productController.hasActiveFilters ? productController.filteredProducts : productController.products;
+      for (final p in list) {
         final first = p.batches.isNotEmpty ? p.batches.first : null;
         final row = [
           p.name,
@@ -424,6 +459,9 @@ class ProductListScreen extends StatelessWidget {
           first?.mrp ?? 0,
           p.totalStock,
           first?.expiryDate?.toIso8601String().split('T').first ?? '',
+          p.cgstPercentage,
+          p.sgstPercentage,
+          p.discountPercentage,
         ];
         sheet.appendRow(row.map<ex.CellValue?>((e) => _toCellValue(e)).toList());
       }

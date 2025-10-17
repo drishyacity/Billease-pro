@@ -211,12 +211,15 @@ class _BillingScreenState extends State<BillingScreen> {
             if (billController.isLoading) {
               return const Center(child: LoadingWidget());
             }
-            final List<Bill> source = widget.showTodayOnly
+            final List<Bill> source = (widget.showTodayOnly
                 ? billController.bills.where((b) {
                     final now = DateTime.now();
                     return b.date.year == now.year && b.date.month == now.month && b.date.day == now.day;
                   }).toList()
-                : billController.filteredBills;
+                : billController.filteredBills)
+              // Exclude rough estimates from regular history
+              .where((b) => (b.notes ?? '').toLowerCase() != 'estimate')
+              .toList();
             if (source.isEmpty) {
               return const Center(
                 child: Text('No bills found'),
@@ -252,6 +255,15 @@ class _BillingScreenState extends State<BillingScreen> {
             if (bill.customerId != null && bill.customerId!.isNotEmpty)
               Text('Customer ID: ${bill.customerId}'),
             Text('Items: ${bill.items.length}'),
+            // GST and discount/extra summary
+            if (bill.gstEnabled)
+              Text('GST: ${bill.inlineGst ? 'Inline (CGST/SGST on each line)' : 'Total (on subtotal)'}'),
+            if (bill.finalDiscountValue > 0)
+              Text('Final Discount: ' + (bill.finalDiscountIsPercent
+                  ? '${bill.finalDiscountValue.toStringAsFixed(2)}%'
+                  : '₹${bill.finalDiscountValue.toStringAsFixed(2)}')),
+            if ((bill.extraAmount) > 0)
+              Text('${bill.extraAmountName?.isNotEmpty == true ? bill.extraAmountName : 'Extra'}: +₹${bill.extraAmount.toStringAsFixed(2)}'),
           ],
         ),
         trailing: Column(

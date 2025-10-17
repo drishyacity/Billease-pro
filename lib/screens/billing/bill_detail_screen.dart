@@ -25,7 +25,7 @@ class BillDetailScreen extends StatelessWidget {
               Get.snackbar(
                 'Coming Soon',
                 'Print functionality will be available soon',
-                snackPosition: SnackPosition.BOTTOM,
+                snackPosition: SnackPosition.TOP,
               );
             },
           ),
@@ -158,6 +158,14 @@ class BillDetailScreen extends StatelessWidget {
                                 : '${item.expiryOverride!.day}/${item.expiryOverride!.month}/${item.expiryOverride!.year}',
                             style: const TextStyle(fontWeight: FontWeight.w500),
                           ),
+                          if (bill.gstEnabled && bill.inlineGst) ...[
+                            const Text('CGST:'),
+                            Text('${(item.cgst ?? 0).toStringAsFixed(2)}%'),
+                            const Text('SGST:'),
+                            Text('${(item.sgst ?? 0).toStringAsFixed(2)}%'),
+                            const Text('Disc:'),
+                            Text('${(item.discountPercent ?? 0).toStringAsFixed(2)}%'),
+                          ],
                         ],
                       ),
                     ],
@@ -205,6 +213,38 @@ class BillDetailScreen extends StatelessWidget {
                 ),
               ],
             ),
+            if (bill.finalDiscountValue > 0)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Final Discount:'),
+                  Text(
+                    bill.finalDiscountIsPercent
+                        ? '${bill.finalDiscountValue.toStringAsFixed(2)}%'
+                        : '₹${bill.finalDiscountValue.toStringAsFixed(2)}',
+                  ),
+                ],
+              ),
+            if ((bill.extraAmount) > 0) ...[
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(bill.extraAmountName?.isNotEmpty == true ? bill.extraAmountName! : 'Extra Amount'),
+                  Text('₹${bill.extraAmount.toStringAsFixed(2)}'),
+                ],
+              ),
+            ],
+            if (bill.gstEnabled) ...[
+              const Divider(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('GST Mode:'),
+                  Text(bill.inlineGst ? 'Inline (CGST/SGST per line)' : 'Total (on subtotal)'),
+                ],
+              ),
+            ],
           ],
         ),
       ),

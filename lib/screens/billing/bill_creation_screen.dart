@@ -35,6 +35,91 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
   // unified final discount input
   final TextEditingController _finalDiscountCtrl = TextEditingController(text: '0');
   bool _finalDiscountIsPercent = true;
+  bool _isSaving = false;
+  
+  Future<String> _generateBillId({required bool isEstimate}) async {
+    final now = DateTime.now();
+    String dd = now.day.toString().padLeft(2, '0');
+    String mm = now.month.toString().padLeft(2, '0');
+    String yy = (now.year % 100).toString().padLeft(2, '0');
+    final prefix = isEstimate
+        ? 'RE'
+        : (widget.billType == BillType.quickSale
+            ? 'QB'
+            : widget.billType == BillType.retail
+                ? 'RB'
+                : 'WB');
+    final prefixDate = '$prefix$dd$mm$yy';
+    // Count existing bills today for this prefix
+    final db = await DatabaseService().database;
+    final res = await db.rawQuery('SELECT COUNT(*) AS c FROM bills WHERE id LIKE ?', ['${prefixDate}%']);
+    final count = (res.first['c'] as int?) ?? 0;
+    final seq = (count + 1).toString();
+    return '$prefixDate$seq';
+  }
+
+  void _refreshGstForItems() {
+    // Recalculate per-line CGST/SGST and discount eligibility based on current mode
+    if (widget.billType != BillType.wholesale) {
+      for (var i = 0; i < _items.length; i++) {
+        final it = _items[i];
+        _items[i] = BillItem(
+          id: it.id,
+          productId: it.productId,
+          productName: it.productName,
+          quantity: it.quantity,
+          unitPrice: it.unitPrice,
+          totalPrice: it.quantity * it.unitPrice,
+          batchId: it.batchId,
+          unit: it.unit,
+          cgst: null,
+          sgst: null,
+          discountPercent: null,
+          mrpOverride: it.mrpOverride,
+          expiryOverride: it.expiryOverride,
+        );
+      }
+      return;
+    }
+    for (var i = 0; i < _items.length; i++) {
+      final it = _items[i];
+      double? cgstVal;
+      double? sgstVal;
+      double? discVal;
+      if (_gstEnabled) {
+        // find product
+        final prod = _productController.products.firstWhereOrNull((p) => p.id == it.productId);
+        if (prod != null) {
+          cgstVal = prod.cgstPercentage;
+          sgstVal = prod.sgstPercentage;
+          if ((cgstVal == 0 || cgstVal == null) && (sgstVal == 0 || sgstVal == null) && prod.gstPercentage > 0) {
+            cgstVal = prod.gstPercentage / 2;
+            sgstVal = prod.gstPercentage / 2;
+          }
+          if (_inlineGst) {
+            discVal = it.discountPercent ?? (prod.discountPercentage);
+          } else {
+            discVal = null; // total GST mode: no inline discount
+          }
+        }
+      }
+      _items[i] = BillItem(
+        id: it.id,
+        productId: it.productId,
+        productName: it.productName,
+        quantity: it.quantity,
+        unitPrice: it.unitPrice,
+        totalPrice: it.quantity * it.unitPrice,
+        batchId: it.batchId,
+        unit: it.unit,
+        cgst: _gstEnabled ? cgstVal : null,
+        sgst: _gstEnabled ? sgstVal : null,
+        discountPercent: (_gstEnabled && _inlineGst) ? discVal : null,
+        mrpOverride: it.mrpOverride,
+        expiryOverride: it.expiryOverride,
+      );
+    }
+  }
   
   @override
   void initState() {
@@ -96,7 +181,10 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
                 children: [
                   Switch(
                     value: _gstEnabled,
-                    onChanged: (v) => setState(() => _gstEnabled = v),
+                    onChanged: (v) => setState(() {
+                      _gstEnabled = v;
+                      _refreshGstForItems();
+                    }),
                   ),
                   const Text('GST Bill'),
                   const SizedBox(width: 16),
@@ -107,7 +195,10 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
                         ButtonSegment(value: false, label: Text('Total GST')),
                       ],
                       selected: {_inlineGst},
-                      onSelectionChanged: (s) => setState(() => _inlineGst = s.first),
+                      onSelectionChanged: (s) => setState(() {
+                        _inlineGst = s.first;
+                        _refreshGstForItems();
+                      }),
                     ),
                 ],
               ),
@@ -256,19 +347,27 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        if (_gstEnabled)
+                        if (_gstEnabled && _inlineGst)
                           Row(
                             children: [
                               Expanded(child: Text('CGST: ${(item.cgst ?? 0).toStringAsFixed(2)}%')),
                               Expanded(child: Text('SGST: ${(item.sgst ?? 0).toStringAsFixed(2)}%')),
                             ],
                           ),
-                        Row(
-                          children: [
-                            Expanded(child: Text('Discount: ${(item.discountPercent ?? 0).toStringAsFixed(2)}%')),
-                            Expanded(child: Text('Line Total: ₹${_computeLineTotal(item).toStringAsFixed(2)}')),
-                          ],
-                        ),
+                        if (widget.billType == BillType.wholesale && _gstEnabled && _inlineGst)
+                          Row(
+                            children: [
+                              Expanded(child: Text('Discount: ${(item.discountPercent ?? 0).toStringAsFixed(2)}%')),
+                              Expanded(child: Text('Line Total: ₹${_computeLineTotal(item).toStringAsFixed(2)}')),
+                            ],
+                          )
+                        else
+                          Row(
+                            children: [
+                              const Expanded(child: SizedBox()),
+                              Expanded(child: Text('Line Total: ₹${_computeLineTotal(item).toStringAsFixed(2)}')),
+                            ],
+                          ),
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton.icon(
@@ -388,11 +487,14 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
   void _addItem() { _showAddItemDialog(); }
 
   void _showAddItemDialog() {
+    // Open instantly; rely on already loaded products. Refresh happens elsewhere if needed.
     Product? selectedProduct;
     ProductBatch? selectedBatch;
     String? baseUnit;
     // quantities for all units (base + converted)
     final Map<String, TextEditingController> qtyCtrls = {};
+    // local map of unit -> factor (how many base units in 1 of this unit)
+    final Map<String, double> unitFactors = {};
     final priceCtrl = TextEditingController(text: '0'); // per base unit
     final discCtrl = TextEditingController(text: '0');
     final searchCtrl = TextEditingController();
@@ -400,245 +502,303 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, dialogSetState) => AlertDialog(
-          title: const Text('Add Item'),
-          content: LayoutBuilder(
-            builder: (context, constraints) {
-              final maxW = constraints.maxWidth;
-              final dialogW = maxW.clamp(320.0, 600.0);
-              return ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: dialogW),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Product search
-                      TextField(
-                        controller: searchCtrl,
-                        decoration: InputDecoration(
-                          labelText: 'Search Product',
-                          suffixIcon: IconButton(
-                            icon: const Icon(Icons.add_circle_outline),
-                            tooltip: 'Add new product',
-                            onPressed: () async {
-                              await Get.toNamed('/products/new');
-                              // refresh products after returning
-                              _productController.loadProducts();
-                              dialogSetState(() {});
-                            },
-                          ),
-                        ),
-                        onChanged: (_) => dialogSetState(() {}),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        height: 150,
-                        child: ListView(
-                          children: _productController.products
-                              .where((p) => p.name.toLowerCase().contains(searchCtrl.text.toLowerCase()))
-                              .map((p) => ListTile(
-                                    title: Text(p.name),
-                                    subtitle: Text(p.barcode ?? ''),
-                                    onTap: () {
-                                      dialogSetState(() {
-                                        selectedProduct = p;
-                                        selectedBatch = p.batches.isNotEmpty ? p.batches.first : null;
-                                        baseUnit = p.primaryUnit;
-                                        qtyCtrls.clear();
-                                        if (baseUnit != null) qtyCtrls[baseUnit!] = TextEditingController(text: '0');
-                                        for (final uc in p.unitConversions) {
-                                          qtyCtrls[uc.convertedUnit] = TextEditingController(text: '0');
-                                        }
-                                        if (selectedBatch != null) {
-                                          final isEstimate = (Get.arguments is Map && (Get.arguments['estimate'] == true));
-                                          if (widget.billType == BillType.wholesale || isEstimate) {
-                                            priceCtrl.text = selectedBatch!.sellingPrice.toStringAsFixed(2);
-                                          } else {
-                                            priceCtrl.text = selectedBatch!.mrp.toStringAsFixed(2);
-                                          }
-                                        } else {
-                                          priceCtrl.text = '0';
-                                        }
-                                      });
-                                    },
-                                  ))
-                              .toList(),
-                        ),
-                      ),
-                      // Add new unit for selected product
-                      if (selectedProduct != null) Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
+        builder: (context, dialogSetState) => WillPopScope(
+          onWillPop: () async {
+            final isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+            if (isKeyboardOpen) {
+              FocusScope.of(context).unfocus();
+              return false; // consume back to just hide keyboard
+            }
+            return true; // allow dialog to close
+          },
+          child: Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            clipBehavior: Clip.hardEdge,
+            child: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('Add Item', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 12),
+                    // Product search
+                    TextField(
+                      controller: searchCtrl,
+                      decoration: InputDecoration(
+                        labelText: 'Search Product',
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.add_circle_outline),
+                          tooltip: 'Add new product',
                           onPressed: () async {
-                            final unitCtrl = TextEditingController();
-                            final factorCtrl = TextEditingController();
-                            bool largerThanBase = true;
-                            final base = selectedProduct!.primaryUnit;
-                            final res = await showDialog<UnitConversion>(
-                              context: context,
-                              builder: (context) => StatefulBuilder(
-                                builder: (context, setS) => AlertDialog(
-                                  title: const Text('Create Unit'),
-                                  content: SingleChildScrollView(
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        TextField(controller: unitCtrl, decoration: const InputDecoration(labelText: 'Unit name')),
-                                        const SizedBox(height: 8),
-                                        Row(children: [
-                                          const Text('Unit larger than base'),
-                                          const SizedBox(width: 8),
-                                          Switch(value: largerThanBase, onChanged: (v){ setS(()=> largerThanBase = v); }),
-                                        ]),
-                                        TextField(
-                                          controller: factorCtrl,
-                                          keyboardType: TextInputType.number,
-                                          decoration: InputDecoration(
-                                            labelText: largerThanBase
-                                              ? 'How many $base in 1 <unit>?' : 'How many <unit> in 1 $base?'),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  actions: [
-                                    TextButton(onPressed: ()=> Navigator.pop(context), child: const Text('Cancel')),
-                                    ElevatedButton(
-                                      onPressed: () {
-                                        final name = unitCtrl.text.trim();
-                                        final val = double.tryParse(factorCtrl.text.trim());
-                                        if (name.isNotEmpty && val != null && val > 0) {
-                                          final factor = largerThanBase ? val : (1/val);
-                                          Navigator.pop(context, UnitConversion(baseUnit: base, convertedUnit: name, conversionFactor: factor));
-                                        }
-                                      },
-                                      child: const Text('Add'),
-                                    )
-                                  ],
-                                ),
-                              ),
-                            );
-                            if (res != null) {
-                              // persist into DB and update controller
-                              final db = DatabaseService();
-                              final dbi = await db.database;
-                              await dbi.insert('unit_conversions', {
-                                'product_id': selectedProduct!.id,
-                                'base_unit': res.baseUnit,
-                                'converted_unit': res.convertedUnit,
-                                'conversion_factor': res.conversionFactor,
-                              }, conflictAlgorithm: ConflictAlgorithm.replace);
-                              await _productController.loadProducts();
-                              dialogSetState(() {
-                                // reinitialize qty controls to include new unit
-                                qtyCtrls[res.convertedUnit] = TextEditingController(text: '0');
-                              });
-                            }
+                            await Get.to(() => ProductFormScreen(product: null));
+                            await _productController.loadProducts();
+                            dialogSetState(() {});
                           },
-                          icon: const Icon(Icons.straighten),
-                          label: const Text('Create New Unit'),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      // Batch dropdown
-                      DropdownButtonFormField<ProductBatch>(
-                        decoration: const InputDecoration(labelText: 'Batch'),
-                        items: (selectedProduct?.batches ?? [])
-                            .map((b) => DropdownMenuItem<ProductBatch>(value: b, child: Text('${b.name} • MRP ₹${b.mrp.toStringAsFixed(2)} • Stock ${b.stock}')))
+                      onChanged: (_) => dialogSetState(() {}),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 150,
+                      child: ListView(
+                        children: _productController.products
+                            .where((p) => p.name.toLowerCase().contains(searchCtrl.text.toLowerCase()))
+                            .map((p) => ListTile(
+                                  title: Text(p.name),
+                                  subtitle: Text(p.barcode ?? ''),
+                                  selected: selectedProduct?.id == p.id,
+                                  trailing: selectedProduct?.id == p.id
+                                      ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary)
+                                      : null,
+                                  onTap: () {
+                                    dialogSetState(() {
+                                      selectedProduct = p;
+                                      selectedBatch = p.batches.isNotEmpty ? p.batches.first : null;
+                                      baseUnit = p.primaryUnit;
+                                      qtyCtrls.clear();
+                                      unitFactors.clear();
+                                      if (baseUnit != null) {
+                                        qtyCtrls[baseUnit!] = TextEditingController(text: '0');
+                                        unitFactors[baseUnit!] = 1.0;
+                                      }
+                                      for (final uc in p.unitConversions) {
+                                        qtyCtrls[uc.convertedUnit] = TextEditingController(text: '0');
+                                        unitFactors[uc.convertedUnit] = uc.conversionFactor;
+                                      }
+                                      if (selectedBatch != null) {
+                                        final isEstimate = (Get.arguments is Map && (Get.arguments['estimate'] == true));
+                                        if (widget.billType == BillType.wholesale || isEstimate) {
+                                          priceCtrl.text = selectedBatch!.sellingPrice.toStringAsFixed(2);
+                                        } else {
+                                          priceCtrl.text = selectedBatch!.mrp.toStringAsFixed(2);
+                                        }
+                                      } else {
+                                        priceCtrl.text = '0';
+                                      }
+                                      // Prefill discount for wholesale inline GST from product defaults
+                                      if (widget.billType == BillType.wholesale && _gstEnabled && _inlineGst) {
+                                        discCtrl.text = selectedProduct!.discountPercentage.toStringAsFixed(2);
+                                      }
+                                    });
+                                  },
+                                ))
                             .toList(),
-                        onChanged: (b) {
-                          dialogSetState(() {
-                            selectedBatch = b;
-                            if (b != null) {
-                              if (widget.billType == BillType.wholesale) {
-                                priceCtrl.text = b.sellingPrice.toStringAsFixed(2);
-                              } else {
-                                priceCtrl.text = b.mrp.toStringAsFixed(2);
-                              }
-                            }
-                          });
-                        },
-                        value: selectedBatch,
                       ),
-                      const SizedBox(height: 12),
-                      // Quantities for all units
-                      if (selectedProduct != null) ...[
-                        ...qtyCtrls.entries.map((e) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8.0),
-                              child: TextField(
-                                controller: e.value,
-                                keyboardType: TextInputType.number,
-                                decoration: InputDecoration(labelText: 'Quantity (${e.key})'),
-                              ),
-                            )),
-                        Row(
+                    ),
+                    if (selectedProduct != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surfaceVariant,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: TextField(
-                                controller: priceCtrl,
-                                keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(labelText: 'Unit Price (per base unit)'),
-                              ),
-                            ),
+                            Text(selectedProduct!.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                            if (selectedBatch != null)
+                              Text('Batch: ${selectedBatch!.name} • MRP ₹${selectedBatch!.mrp.toStringAsFixed(2)} • Stock ${selectedBatch!.stock}',
+                                  style: const TextStyle(fontSize: 12)),
                           ],
                         ),
-                      ],
-                      if (widget.billType == BillType.wholesale) ...[
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: discCtrl,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Discount % (optional)'),
+                      ),
+                    ],
+                    // Add new unit for selected product
+                    if (selectedProduct != null) Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () async {
+                          final unitCtrl = TextEditingController();
+                          final factorCtrl = TextEditingController();
+                          bool largerThanBase = true;
+                          final base = selectedProduct!.primaryUnit;
+                          final res = await showDialog<UnitConversion>(
+                            context: context,
+                            builder: (context) => StatefulBuilder(
+                              builder: (context, setS) => AlertDialog(
+                                title: const Text('Create Unit'),
+                                content: SingleChildScrollView(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      TextField(controller: unitCtrl, decoration: const InputDecoration(labelText: 'Unit name')),
+                                      const SizedBox(height: 8),
+                                      Row(children: [
+                                        const Text('Unit larger than base'),
+                                        const SizedBox(width: 8),
+                                        Switch(value: largerThanBase, onChanged: (v){ setS(()=> largerThanBase = v); }),
+                                      ]),
+                                      TextField(
+                                        controller: factorCtrl,
+                                        keyboardType: TextInputType.number,
+                                        decoration: InputDecoration(
+                                          labelText: largerThanBase
+                                            ? 'How many $base in 1 <unit>?' : 'How many <unit> in 1 $base?'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(onPressed: ()=> Navigator.pop(context), child: const Text('Cancel')),
+                                  ElevatedButton(
+                                    onPressed: () {
+                                      final name = unitCtrl.text.trim();
+                                      final val = double.tryParse(factorCtrl.text.trim());
+                                      if (name.isNotEmpty && val != null && val > 0) {
+                                        final factor = largerThanBase ? val : (1/val);
+                                        Navigator.pop(context, UnitConversion(baseUnit: base, convertedUnit: name, conversionFactor: factor));
+                                      }
+                                    },
+                                    child: const Text('Add'),
+                                  )
+                                ],
+                              ),
+                            ),
+                          );
+                          if (res != null) {
+                            // persist into DB and update controller and local unit map
+                            final db = DatabaseService();
+                            final dbi = await db.database;
+                            await dbi.insert('unit_conversions', {
+                              'product_id': selectedProduct!.id,
+                              'base_unit': res.baseUnit,
+                              'converted_unit': res.convertedUnit,
+                              'conversion_factor': res.conversionFactor,
+                            }, conflictAlgorithm: ConflictAlgorithm.replace);
+                            await _productController.loadProducts();
+                            dialogSetState(() {
+                              qtyCtrls[res.convertedUnit] = TextEditingController(text: '0');
+                              unitFactors[res.convertedUnit] = res.conversionFactor;
+                            });
+                          }
+                        },
+                        icon: const Icon(Icons.straighten),
+                        label: const Text('Create New Unit'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Batch dropdown
+                    DropdownButtonFormField<ProductBatch>(
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Batch'),
+                      items: (selectedProduct?.batches ?? [])
+                          .map((b) => DropdownMenuItem<ProductBatch>(
+                                value: b,
+                                child: Text(
+                                  '${b.name} • MRP ₹${b.mrp.toStringAsFixed(2)} • Stock ${b.stock}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ))
+                          .toList(),
+                      onChanged: (b) {
+                        dialogSetState(() {
+                          selectedBatch = b;
+                          if (b != null) {
+                            if (widget.billType == BillType.wholesale) {
+                              priceCtrl.text = b.sellingPrice.toStringAsFixed(2);
+                            } else {
+                              priceCtrl.text = b.mrp.toStringAsFixed(2);
+                            }
+                          }
+                        });
+                      },
+                      value: selectedBatch,
+                    ),
+                    const SizedBox(height: 12),
+                    // Quantities for all units
+                    if (selectedProduct != null) ...[
+                      ...qtyCtrls.entries.map((e) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8.0),
+                            child: TextField(
+                              controller: e.value,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(labelText: 'Quantity (${e.key})'),
+                            ),
+                          )),
+                      TextField(
+                        controller: priceCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Unit Price (per base unit)'),
+                      ),
+                    ],
+                    if (widget.billType == BillType.wholesale && _gstEnabled && _inlineGst) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: discCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Discount % (optional)'),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: () {
+                            if (selectedProduct == null || selectedBatch == null) return;
+                            // compute total quantity in base unit from all unit inputs (using local unitFactors)
+                            double totalBaseQty = 0.0;
+                            final base = baseUnit ?? selectedProduct!.primaryUnit;
+                            // ensure base unit factor present
+                            unitFactors[base] = unitFactors[base] ?? 1.0;
+                            for (final entry in unitFactors.entries) {
+                              final unit = entry.key;
+                              final factor = entry.value;
+                              final v = double.tryParse(qtyCtrls[unit]?.text ?? '0') ?? 0;
+                              totalBaseQty += v * factor;
+                            }
+                            if (totalBaseQty <= 0) {
+                              Get.snackbar('Quantity required', 'Enter quantity for at least one unit', snackPosition: SnackPosition.TOP);
+                              return;
+                            }
+                            final price = double.tryParse(priceCtrl.text) ?? 0.0;
+                            final discount = double.tryParse(discCtrl.text);
+                            // Determine CGST/SGST for inline GST
+                            double? cgstVal;
+                            double? sgstVal;
+                            if (widget.billType == BillType.wholesale && _gstEnabled) {
+                              cgstVal = selectedProduct!.cgstPercentage;
+                              sgstVal = selectedProduct!.sgstPercentage;
+                              if ((cgstVal == 0 || cgstVal == null) && (sgstVal == 0 || sgstVal == null) && selectedProduct!.gstPercentage > 0) {
+                                cgstVal = selectedProduct!.gstPercentage / 2;
+                                sgstVal = selectedProduct!.gstPercentage / 2;
+                              }
+                            }
+                            setState(() {
+                              _items.add(BillItem(
+                                productId: selectedProduct!.id,
+                                productName: selectedProduct!.name,
+                                quantity: totalBaseQty,
+                                unitPrice: price, // per base unit
+                                unit: base,
+                                batchId: selectedBatch!.id,
+                                cgst: (widget.billType == BillType.wholesale && _gstEnabled) ? cgstVal : null,
+                                sgst: (widget.billType == BillType.wholesale && _gstEnabled) ? sgstVal : null,
+                                discountPercent: (widget.billType == BillType.wholesale && _gstEnabled && _inlineGst) ? (discount ?? 0) : null,
+                                // Initialize per-bill overrides from chosen batch
+                                mrpOverride: selectedBatch?.mrp,
+                                expiryOverride: selectedBatch?.expiryDate,
+                              ));
+                            });
+                            Navigator.pop(context);
+                          },
+                          child: const Text('Add'),
                         ),
                       ],
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              );
-            },
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () {
-                if (selectedProduct == null || selectedBatch == null) return;
-                // compute total quantity in base unit from all unit inputs
-                double totalBaseQty = 0.0;
-                final base = baseUnit ?? selectedProduct!.primaryUnit;
-                for (final uc in selectedProduct!.unitConversions) {
-                  // factor: how many base units in 1 converted unit
-                  final v = double.tryParse(qtyCtrls[uc.convertedUnit]?.text ?? '0') ?? 0;
-                  totalBaseQty += v * uc.conversionFactor;
-                }
-                // include base unit entry
-                totalBaseQty += double.tryParse(qtyCtrls[base]?.text ?? '0') ?? 0;
-                if (totalBaseQty <= 0) {
-                  Get.snackbar('Quantity required', 'Enter quantity for at least one unit');
-                  return;
-                }
-                final price = double.tryParse(priceCtrl.text) ?? 0.0;
-                final discount = double.tryParse(discCtrl.text);
-                // update parent state so list refreshes
-                setState(() {
-                  _items.add(BillItem(
-                    productId: selectedProduct!.id,
-                    productName: selectedProduct!.name,
-                    quantity: totalBaseQty,
-                    unitPrice: price, // per base unit
-                    unit: base,
-                    batchId: selectedBatch!.id,
-                    cgst: widget.billType == BillType.wholesale && _gstEnabled ? (selectedProduct!.gstPercentage / 2) : null,
-                    sgst: widget.billType == BillType.wholesale && _gstEnabled ? (selectedProduct!.gstPercentage / 2) : null,
-                    discountPercent: widget.billType == BillType.wholesale ? (discount ?? 0) : null,
-                    // Initialize per-bill overrides from chosen batch
-                    mrpOverride: selectedBatch?.mrp,
-                    expiryOverride: selectedBatch?.expiryDate,
-                  ));
-                });
-                Navigator.pop(context);
-              },
-              child: const Text('Add'),
+              ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -646,13 +806,16 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
 
   Future<void> _saveBill() async {
     if (_items.isEmpty) {
-      Get.snackbar('Error', 'Please add at least one item');
+      Get.snackbar('Error', 'Please add at least one item', snackPosition: SnackPosition.TOP);
       return;
     }
+    if (_isSaving) return; // prevent double tap
+    setState(() { _isSaving = true; });
 
     final totals = _computeTotals();
+    final billId = _isEdit ? _editBillId! : await _generateBillId(isEstimate: false);
     final bill = Bill(
-      id: _isEdit ? _editBillId : DateTime.now().millisecondsSinceEpoch.toString(),
+      id: billId,
       date: DateTime.now(),
       type: widget.billType,
       customerId: _customerId,
@@ -663,6 +826,12 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
       totalAmount: totals['grand']!,
       status: BillStatus.completed,
       notes: '',
+      finalDiscountValue: double.tryParse(_finalDiscountCtrl.text) ?? 0.0,
+      finalDiscountIsPercent: _finalDiscountIsPercent,
+      extraAmount: _extraAmount,
+      extraAmountName: _extraAmountName.text.trim().isEmpty ? null : _extraAmountName.text.trim(),
+      gstEnabled: widget.billType == BillType.wholesale ? _gstEnabled : false,
+      inlineGst: _inlineGst,
     );
 
     if (_isEdit) {
@@ -671,28 +840,30 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
       await _billController.addBill(bill);
     }
     await _billController.loadBills();
-    Get.snackbar('Success', 'Bill saved successfully', snackPosition: SnackPosition.BOTTOM);
-    await Future.delayed(const Duration(milliseconds: 500));
+    setState(() { _isSaving = false; });
     Get.offAll(() => const BillingScreen());
   }
 
   void _previewEstimate() {
     if (_items.isEmpty) {
-      Get.snackbar('Error', 'Please add at least one item');
+      Get.snackbar('Error', 'Please add at least one item', snackPosition: SnackPosition.TOP);
       return;
     }
     Get.back();
-    Get.snackbar('Estimate', 'Estimate generated (not saved as bill)', snackPosition: SnackPosition.BOTTOM);
+    Get.snackbar('Estimate', 'Estimate generated (not saved as bill)', snackPosition: SnackPosition.TOP);
   }
 
   Future<void> _saveEstimate() async {
     if (_items.isEmpty) {
-      Get.snackbar('Error', 'Please add at least one item');
+      Get.snackbar('Error', 'Please add at least one item', snackPosition: SnackPosition.TOP);
       return;
     }
+    if (_isSaving) return;
+    setState(() { _isSaving = true; });
     final totals = _computeTotals();
+    final estId = _isEdit ? _editBillId! : await _generateBillId(isEstimate: true);
     final bill = Bill(
-      id: _isEdit ? _editBillId : DateTime.now().millisecondsSinceEpoch.toString(),
+      id: estId,
       date: DateTime.now(),
       type: widget.billType, // retail UI pricing, but notes marks this as estimate
       customerId: _customerId,
@@ -701,6 +872,12 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
       totalAmount: totals['grand']!,
       status: BillStatus.draft,
       notes: 'estimate',
+      finalDiscountValue: double.tryParse(_finalDiscountCtrl.text) ?? 0.0,
+      finalDiscountIsPercent: _finalDiscountIsPercent,
+      extraAmount: _extraAmount,
+      extraAmountName: _extraAmountName.text.trim().isEmpty ? null : _extraAmountName.text.trim(),
+      gstEnabled: widget.billType == BillType.wholesale ? _gstEnabled : false,
+      inlineGst: _inlineGst,
     );
     if (_isEdit) {
       await _billController.updateBill(bill);
@@ -708,8 +885,7 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
       await _billController.addBill(bill);
     }
     await _billController.loadBills();
-    Get.snackbar('Saved', 'Estimate saved', snackPosition: SnackPosition.BOTTOM);
-    await Future.delayed(const Duration(milliseconds: 400));
+    setState(() { _isSaving = false; });
     Get.offAll(() => const BillingScreen());
   }
 
@@ -910,7 +1086,7 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
 
   Future<void> _saveDraft() async {
     if (_items.isEmpty) {
-      Get.snackbar('Error', 'Please add at least one item');
+      Get.snackbar('Error', 'Please add at least one item', snackPosition: SnackPosition.TOP);
       return;
     }
     final totals = _computeTotals();
@@ -933,7 +1109,7 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
       await _billController.addBill(bill);
     }
     await _billController.loadBills();
-    Get.snackbar('Saved as Draft', 'Draft saved successfully', snackPosition: SnackPosition.BOTTOM);
+    Get.snackbar('Saved as Draft', 'Draft saved successfully', snackPosition: SnackPosition.TOP);
     await Future.delayed(const Duration(milliseconds: 500));
     Get.back();
   }
@@ -941,7 +1117,7 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
   void _discardBill() {
     _items.clear();
     setState(() {});
-    Get.snackbar('Discarded', 'Bill discarded');
+    Get.snackbar('Discarded', 'Bill discarded', snackPosition: SnackPosition.TOP);
     Future.delayed(const Duration(milliseconds: 300), () {
       Get.offAll(() => const BillingScreen());
     });

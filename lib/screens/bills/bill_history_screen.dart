@@ -165,7 +165,9 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
               if (billController.isLoading) {
                 return const Center(child: CircularProgressIndicator());
               }
-              final bills = billController.filteredBills;
+              final bills = billController.filteredBills
+                  .where((b) => (b.notes ?? '').toLowerCase() != 'estimate')
+                  .toList();
               if (bills.isEmpty) {
                 return const Center(child: Text('No bills found'));
               }

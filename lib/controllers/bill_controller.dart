@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import 'package:sqflite/sqflite.dart';
 import '../models/bill_model.dart';
 import '../services/database_service.dart';
 import 'product_controller.dart';
@@ -16,6 +17,24 @@ class BillController extends GetxController {
   void onInit() {
     super.onInit();
     loadBills();
+  }
+
+  Future<String?> _validateBill(Bill bill) async {
+    if (bill.items.isEmpty) return 'Please add at least one item';
+    final dbi = await DatabaseService().database;
+    for (final it in bill.items) {
+      if (it.productId.isEmpty) return 'One or more items have no product selected.';
+      final prod = await dbi.query('products', where: 'id = ?', whereArgs: [it.productId], limit: 1);
+      if (prod.isEmpty) return 'Product ${it.productName} is not available locally. Please sync products.';
+      if (it.batchId != null) {
+        final batch = await dbi.query('batches', where: 'id = ?', whereArgs: [it.batchId], limit: 1);
+        if (batch.isEmpty) return 'Selected batch for ${it.productName} no longer exists. Please reselect.';
+        if (batch.first['product_id'] != it.productId) return 'Selected batch does not belong to ${it.productName}.';
+      }
+      if (it.quantity <= 0) return 'Quantity for ${it.productName} must be greater than 0';
+      if (it.unitPrice < 0) return 'Unit price for ${it.productName} cannot be negative';
+    }
+    return null;
   }
 
   void filterBills({String? searchQuery, DateTime? from, DateTime? to}) {
@@ -74,6 +93,12 @@ class BillController extends GetxController {
           'paidAmount': row['paid_amount'],
           'status': row['status'],
           'notes': row['notes'],
+          'finalDiscountValue': row['final_discount_value'],
+          'finalDiscountIsPercent': (row['final_discount_is_percent'] ?? 1) == 1,
+          'extraAmount': row['extra_amount'],
+          'extraAmountName': row['extra_amount_name'],
+          'gstEnabled': (row['gst_enabled'] ?? 0) == 1,
+          'inlineGst': (row['inline_gst'] ?? 1) == 1,
         });
         loaded.add(bill);
       }
@@ -82,7 +107,7 @@ class BillController extends GetxController {
       Get.snackbar(
         'Error',
         'Failed to load bills: ${e.toString()}',
-        snackPosition: SnackPosition.BOTTOM,
+        snackPosition: SnackPosition.TOP,
       );
     } finally {
       _filteredBills.value = _bills;
@@ -95,13 +120,18 @@ class BillController extends GetxController {
   Future<void> addBill(Bill bill) async {
     _isLoading.value = true;
     try {
+      final validation = await _validateBill(bill);
+      if (validation != null) {
+        Get.snackbar('Cannot save bill', validation, snackPosition: SnackPosition.TOP);
+        return;
+      }
       final db = DatabaseService();
       await db.insertBill(bill.toJson(), bill.items.map((e) => e.toJson()..['bill_id'] = bill.id).toList());
       // Adjust stock for completed bills
       if (bill.status == BillStatus.completed) {
         for (final it in bill.items) {
           if (it.batchId != null) {
-            final delta = -it.quantity.round();
+            final double delta = -it.quantity; // keep decimals
             await db.adjustBatchStock(batchId: it.batchId!, delta: delta);
           }
         }
@@ -113,14 +143,14 @@ class BillController extends GetxController {
       Get.snackbar(
         'Success',
         'Bill created successfully',
-        snackPosition: SnackPosition.BOTTOM,
+        snackPosition: SnackPosition.TOP,
       );
     } catch (e) {
-      Get.snackbar(
-        'Error',
-        'Failed to create bill: ${e.toString()}',
-        snackPosition: SnackPosition.BOTTOM,
-      );
+      // Debug log for developers while keeping user-friendly snackbar
+      // ignore: avoid_print
+      print('addBill error: $e');
+      final msg = _friendlyBillError(e);
+      Get.snackbar('Error', msg, snackPosition: SnackPosition.TOP);
     } finally {
       _isLoading.value = false;
     }
@@ -129,6 +159,11 @@ class BillController extends GetxController {
   Future<void> updateBill(Bill bill) async {
     _isLoading.value = true;
     try {
+      final validation = await _validateBill(bill);
+      if (validation != null) {
+        Get.snackbar('Cannot save bill', validation, snackPosition: SnackPosition.TOP);
+        return;
+      }
       final db = DatabaseService();
       // Compute stock adjustments relative to existing bill if any
       final existingIndex = _bills.indexWhere((b) => b.id == bill.id);
@@ -142,25 +177,25 @@ class BillController extends GetxController {
       if (old != null) {
         final oldCompleted = old.status == BillStatus.completed;
         final newCompleted = bill.status == BillStatus.completed;
-        Map<String, int> qtyOld = {};
+        Map<String, double> qtyOld = {};
         for (final it in old.items) {
           if (it.batchId != null) {
-            qtyOld[it.batchId!] = (qtyOld[it.batchId!] ?? 0) + it.quantity.round();
+            qtyOld[it.batchId!] = (qtyOld[it.batchId!] ?? 0) + it.quantity;
           }
         }
-        Map<String, int> qtyNew = {};
+        Map<String, double> qtyNew = {};
         for (final it in bill.items) {
           if (it.batchId != null) {
-            qtyNew[it.batchId!] = (qtyNew[it.batchId!] ?? 0) + it.quantity.round();
+            qtyNew[it.batchId!] = (qtyNew[it.batchId!] ?? 0) + it.quantity;
           }
         }
         if (oldCompleted && newCompleted) {
           // apply difference: new - old (deduct positive delta, add back negative)
           final keys = {...qtyOld.keys, ...qtyNew.keys};
           for (final k in keys) {
-            final oldQ = qtyOld[k] ?? 0;
-            final newQ = qtyNew[k] ?? 0;
-            final diff = newQ - oldQ;
+            final double oldQ = qtyOld[k] ?? 0;
+            final double newQ = qtyNew[k] ?? 0;
+            final double diff = newQ - oldQ;
             if (diff != 0) {
               await db.adjustBatchStock(batchId: k, delta: -diff);
             }
@@ -181,7 +216,7 @@ class BillController extends GetxController {
         if (bill.status == BillStatus.completed) {
           for (final it in bill.items) {
             if (it.batchId != null) {
-              await db.adjustBatchStock(batchId: it.batchId!, delta: -it.quantity.round());
+              await db.adjustBatchStock(batchId: it.batchId!, delta: -it.quantity);
             }
           }
         }
@@ -196,14 +231,13 @@ class BillController extends GetxController {
       Get.snackbar(
         'Success',
         'Bill updated successfully',
-        snackPosition: SnackPosition.BOTTOM,
+        snackPosition: SnackPosition.TOP,
       );
     } catch (e) {
-      Get.snackbar(
-        'Error',
-        'Failed to update bill: ${e.toString()}',
-        snackPosition: SnackPosition.BOTTOM,
-      );
+      // ignore: avoid_print
+      print('updateBill error: $e');
+      final msg = _friendlyBillError(e);
+      Get.snackbar('Error', msg, snackPosition: SnackPosition.TOP);
     } finally {
       _isLoading.value = false;
     }
@@ -220,7 +254,7 @@ class BillController extends GetxController {
         if (bill.status == BillStatus.completed) {
           for (final it in bill.items) {
             if (it.batchId != null) {
-              await db.adjustBatchStock(batchId: it.batchId!, delta: it.quantity.round());
+              await db.adjustBatchStock(batchId: it.batchId!, delta: it.quantity);
             }
           }
         }
@@ -233,16 +267,35 @@ class BillController extends GetxController {
       Get.snackbar(
         'Success',
         'Bill deleted successfully',
-        snackPosition: SnackPosition.BOTTOM,
+        snackPosition: SnackPosition.TOP,
       );
     } catch (e) {
       Get.snackbar(
         'Error',
         'Failed to delete bill: ${e.toString()}',
-        snackPosition: SnackPosition.BOTTOM,
+        snackPosition: SnackPosition.TOP,
       );
     } finally {
       _isLoading.value = false;
     }
+  }
+}
+
+extension BillControllerFriendlyErrors on BillController {
+  String _friendlyBillError(Object e) {
+    if (e is DatabaseException) {
+      final msg = e.toString();
+      if (msg.contains('UNIQUE constraint failed: bills.id')) {
+        return 'A bill with this ID already exists.';
+      }
+      if (msg.contains('NOT NULL')) {
+        return 'Please fill all required fields before saving the bill.';
+      }
+      if (msg.contains('FOREIGN KEY')) {
+        return 'Some items reference missing products or batches. Please review bill items.';
+      }
+      return 'Could not save the bill. Please review the fields and try again.';
+    }
+    return 'Could not save the bill. Please try again.';
   }
 }

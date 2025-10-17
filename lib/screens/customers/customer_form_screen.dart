@@ -192,7 +192,7 @@ class _CustomerFormScreenState extends State<CustomerFormScreen> {
         Get.snackbar(
           'Success',
           'Customer added successfully',
-          snackPosition: SnackPosition.BOTTOM,
+          snackPosition: SnackPosition.TOP,
         );
       } else {
         // Update existing customer
@@ -214,7 +214,7 @@ class _CustomerFormScreenState extends State<CustomerFormScreen> {
         Get.snackbar(
           'Success',
           'Customer updated successfully',
-          snackPosition: SnackPosition.BOTTOM,
+          snackPosition: SnackPosition.TOP,
         );
       }
     }

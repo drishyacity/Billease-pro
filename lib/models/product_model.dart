@@ -7,7 +7,7 @@ class ProductBatch {
   final double sellingPrice;
   final double mrp;
   final DateTime? expiryDate;
-  final int stock;
+  final double stock;
 
   ProductBatch({
     required this.id,
@@ -27,7 +27,7 @@ class ProductBatch {
       sellingPrice: json['sellingPrice'],
       mrp: json['mrp'],
       expiryDate: json['expiryDate'] != null ? DateTime.parse(json['expiryDate']) : null,
-      stock: json['stock'],
+      stock: (json['stock'] as num).toDouble(),
     );
   }
 
@@ -81,6 +81,9 @@ class Product {
   final List<UnitConversion> unitConversions;
   final List<ProductBatch> batches;
   final double gstPercentage;
+  final double cgstPercentage;
+  final double sgstPercentage;
+  final double discountPercentage;
   final int lowStockAlert;
   final int expiryAlertDays;
   final DateTime createdAt;
@@ -95,6 +98,9 @@ class Product {
     this.unitConversions = const [],
     required this.batches,
     this.gstPercentage = 0.0,
+    this.cgstPercentage = 0.0,
+    this.sgstPercentage = 0.0,
+    this.discountPercentage = 0.0,
     this.lowStockAlert = 10,
     this.expiryAlertDays = 30,
     required this.createdAt,
@@ -116,6 +122,9 @@ class Product {
           .map((e) => ProductBatch.fromJson(e))
           .toList(),
       gstPercentage: json['gstPercentage'] ?? 0.0,
+      cgstPercentage: json['cgstPercentage'] ?? 0.0,
+      sgstPercentage: json['sgstPercentage'] ?? 0.0,
+      discountPercentage: json['discountPercentage'] ?? 0.0,
       lowStockAlert: json['lowStockAlert'] ?? 10,
       expiryAlertDays: json['expiryAlertDays'] ?? 30,
       createdAt: DateTime.parse(json['createdAt']),
@@ -133,6 +142,9 @@ class Product {
       'unitConversions': unitConversions.map((e) => e.toJson()).toList(),
       'batches': batches.map((e) => e.toJson()).toList(),
       'gstPercentage': gstPercentage,
+      'cgstPercentage': cgstPercentage,
+      'sgstPercentage': sgstPercentage,
+      'discountPercentage': discountPercentage,
       'lowStockAlert': lowStockAlert,
       'expiryAlertDays': expiryAlertDays,
       'createdAt': createdAt.toIso8601String(),
@@ -140,8 +152,8 @@ class Product {
     };
   }
 
-  int get totalStock {
-    return batches.fold(0, (sum, batch) => sum + batch.stock);
+  double get totalStock {
+    return batches.fold(0.0, (sum, batch) => sum + batch.stock);
   }
 
   bool get isLowStock {

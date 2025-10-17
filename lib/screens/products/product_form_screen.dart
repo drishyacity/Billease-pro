@@ -25,7 +25,9 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   DateTime? _expiryDate;
   final _primaryUnitCtrl = TextEditingController(text: 'piece');
   final List<UnitConversion> _conversions = [];
-  double _gst = 0.0;
+  double _cgst = 0.0;
+  double _sgst = 0.0;
+  double _discountPct = 0.0;
   int _lowStockAlert = 10;
   int _expiryAlertDays = 30;
   final List<Map<String, dynamic>> _formBatches = [];
@@ -41,7 +43,6 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       _barcode.text = p.barcode ?? '';
       _category.text = p.category ?? '';
       _primaryUnitCtrl.text = p.primaryUnit;
-      _gst = p.gstPercentage;
       _lowStockAlert = p.lowStockAlert;
       _expiryAlertDays = p.expiryAlertDays;
       if (p.batches.isNotEmpty) {
@@ -63,6 +64,10 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
           });
         }
       }
+      // Load new tax/discount defaults if present
+      _cgst = p.cgstPercentage;
+      _sgst = p.sgstPercentage;
+      _discountPct = p.discountPercentage;
     }
   }
 
@@ -205,7 +210,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                 TextField(controller: cp, decoration: const InputDecoration(labelText: 'Cost Price'), keyboardType: TextInputType.number),
                                 TextField(controller: sp, decoration: const InputDecoration(labelText: 'Selling Price'), keyboardType: TextInputType.number),
                                 TextField(controller: mrp, decoration: const InputDecoration(labelText: 'MRP'), keyboardType: TextInputType.number),
-                                TextField(controller: stock, decoration: const InputDecoration(labelText: 'Opening Stock'), keyboardType: TextInputType.number),
+                                TextField(controller: stock, decoration: const InputDecoration(labelText: 'Opening Stock (can be decimal)'), keyboardType: TextInputType.number),
                                 const SizedBox(height: 12),
                                 InkWell(
                                   onTap: () async {
@@ -238,7 +243,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                     'selling_price': double.tryParse(sp.text) ?? 0.0,
                                     'mrp': double.tryParse(mrp.text) ?? 0.0,
                                     'expiry_date': expiry,
-                                    'stock': int.tryParse(stock.text) ?? 0,
+                                    'stock': double.tryParse(stock.text) ?? 0.0,
                                   });
                                 });
                               },
@@ -264,7 +269,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Text(b['name']?.toString() ?? 'Batch'),
-                    subtitle: Text('Stock: ${b['stock'] ?? 0}, SP: ₹${(b['selling_price'] as num?)?.toDouble().toString() ?? '0'}'),
+                    subtitle: Text('Stock: ${(b['stock'] as num?)?.toDouble() ?? 0.0}, SP: ₹${(b['selling_price'] as num?)?.toDouble().toString() ?? '0'}'),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete_outline),
                       onPressed: () => setState(() => _formBatches.removeAt(idx)),
@@ -387,7 +392,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                         if (!exists) {
                           setState(() => _conversions.add(res));
                         } else {
-                          Get.snackbar('Duplicate', 'Unit already added', snackPosition: SnackPosition.BOTTOM);
+                          Get.snackbar('Duplicate', 'Unit already added', snackPosition: SnackPosition.TOP);
                         }
                       }
                     },
@@ -468,26 +473,40 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                 ],
               ),
               const SizedBox(height: 12),
+              TextFormField(
+                initialValue: _lowStockAlert.toString(),
+                decoration: const InputDecoration(labelText: 'Low Stock Alert'),
+                keyboardType: TextInputType.number,
+                onChanged: (v) => _lowStockAlert = int.tryParse(v) ?? 10,
+              ),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
                     child: TextFormField(
-                      initialValue: _gst.toString(),
-                      decoration: const InputDecoration(labelText: 'GST %'),
+                      initialValue: _cgst.toString(),
+                      decoration: const InputDecoration(labelText: 'CGST % (wholesale default)'),
                       keyboardType: TextInputType.number,
-                      onChanged: (v) => _gst = double.tryParse(v) ?? 0.0,
+                      onChanged: (v) => _cgst = double.tryParse(v) ?? 0.0,
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: TextFormField(
-                      initialValue: _lowStockAlert.toString(),
-                      decoration: const InputDecoration(labelText: 'Low Stock Alert'),
+                      initialValue: _sgst.toString(),
+                      decoration: const InputDecoration(labelText: 'SGST % (wholesale default)'),
                       keyboardType: TextInputType.number,
-                      onChanged: (v) => _lowStockAlert = int.tryParse(v) ?? 10,
+                      onChanged: (v) => _sgst = double.tryParse(v) ?? 0.0,
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                initialValue: _discountPct.toString(),
+                decoration: const InputDecoration(labelText: 'Discount % (wholesale default)'),
+                keyboardType: TextInputType.number,
+                onChanged: (v) => _discountPct = double.tryParse(v) ?? 0.0,
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -512,92 +531,140 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    final db = DatabaseService();
-    // Duplicate checks
-    final existing = await db.findProductByBarcodeOrName(
-      barcode: _barcode.text.trim().isEmpty ? null : _barcode.text.trim(),
-      name: _name.text.trim(),
-    );
-    if (widget.product == null && existing != null) {
-      Get.snackbar('Duplicate', 'Product already exists', snackPosition: SnackPosition.BOTTOM);
-      return;
-    }
-    if (widget.product != null && existing != null && existing['id'] != widget.product!.id) {
-      Get.snackbar('Duplicate', 'Another product with same name/barcode exists', snackPosition: SnackPosition.BOTTOM);
-      return;
-    }
-    final id = widget.product?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
-    final now = DateTime.now();
-    await db.insertProduct({
-      'id': id,
-      'name': _name.text.trim(),
-      'barcode': _barcode.text.trim().isEmpty ? null : _barcode.text.trim(),
-      'category': _category.text.trim().isEmpty ? null : _category.text.trim(),
-      'primary_unit': _primaryUnitCtrl.text.trim().isEmpty ? 'piece' : _primaryUnitCtrl.text.trim(),
-      'gst_percentage': _gst,
-      'low_stock_alert': _lowStockAlert,
-      'expiry_alert_days': _expiryAlertDays,
-      'created_at': (widget.product?.createdAt ?? now).toIso8601String(),
-      'updated_at': now.toIso8601String(),
-    });
-    // Persist unit conversions
-    for (final uc in _conversions) {
-      await db.database.then((dbi) async {
+    try {
+      if (!_formKey.currentState!.validate()) return;
+      final db = DatabaseService();
+      // Duplicate checks
+      final existing = await db.findProductByBarcodeOrName(
+        barcode: _barcode.text.trim().isEmpty ? null : _barcode.text.trim(),
+        name: _name.text.trim(),
+      );
+      if (widget.product == null && existing != null) {
+        Get.snackbar('Duplicate', 'Product already exists', snackPosition: SnackPosition.TOP);
+        return;
+      }
+      if (widget.product != null && existing != null && existing['id'] != widget.product!.id) {
+        Get.snackbar('Duplicate', 'Another product with same name/barcode exists', snackPosition: SnackPosition.TOP);
+        return;
+      }
+      final id = widget.product?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+      final now = DateTime.now();
+      final productData = {
+        'id': id,
+        'name': _name.text.trim(),
+        'barcode': _barcode.text.trim().isEmpty ? null : _barcode.text.trim(),
+        'category': _category.text.trim().isEmpty ? null : _category.text.trim(),
+        'primary_unit': _primaryUnitCtrl.text.trim().isEmpty ? 'piece' : _primaryUnitCtrl.text.trim(),
+        'gst_percentage': (_cgst + _sgst),
+        'cgst_percentage': _cgst,
+        'sgst_percentage': _sgst,
+        'discount_percentage': _discountPct,
+        'low_stock_alert': _lowStockAlert,
+        'expiry_alert_days': _expiryAlertDays,
+        'created_at': (widget.product?.createdAt ?? now).toIso8601String(),
+        'updated_at': now.toIso8601String(),
+      };
+      if (widget.product == null) {
+        await db.insertProduct(productData);
+      } else {
+        await db.updateProductFields(productData);
+      }
+      // Persist unit conversions (replace set)
+      final dbi = await db.database;
+      await dbi.delete('unit_conversions', where: 'product_id = ?', whereArgs: [id]);
+      for (final uc in _conversions) {
         await dbi.insert('unit_conversions', {
           'product_id': id,
           'base_unit': uc.baseUnit,
           'converted_unit': uc.convertedUnit,
           'conversion_factor': uc.conversionFactor,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
-      });
-    }
-
-    if (_formBatches.isNotEmpty) {
-      for (final b in _formBatches) {
-        await db.insertBatch({
-          'id': b['id'] ?? 'BATCH_${id}_${DateTime.now().microsecondsSinceEpoch}',
-          'product_id': id,
-          'name': b['name'] ?? 'Batch',
-          'cost_price': (b['cost_price'] as num?)?.toDouble() ?? 0.0,
-          'selling_price': (b['selling_price'] as num?)?.toDouble() ?? 0.0,
-          'mrp': (b['mrp'] as num?)?.toDouble() ?? 0.0,
-          'expiry_date': (b['expiry_date'] as DateTime?)?.toIso8601String(),
-          'stock': (b['stock'] as int?) ?? 0,
-        });
       }
-    } else {
-      final newBatch = {
-        'id': 'BATCH_${id}_NEW',
-        'product_id': id,
-        'name': 'New',
-        'cost_price': double.tryParse(_costPrice.text) ?? 0.0,
-        'selling_price': double.tryParse(_sellingPrice.text) ?? 0.0,
-        'mrp': double.tryParse(_mrp.text) ?? 0.0,
-        'expiry_date': _expiryDate?.toIso8601String(),
-        'stock': int.tryParse(_stock.text) ?? 0,
-      };
-      final oldBatch = {
-        'id': 'BATCH_${id}_OLD',
-        'product_id': id,
-        'name': 'Old',
-        'cost_price': newBatch['cost_price'],
-        'selling_price': newBatch['selling_price'],
-        'mrp': newBatch['mrp'],
-        'expiry_date': newBatch['expiry_date'],
-        'stock': 0,
-      };
-      await db.insertBatch(newBatch);
-      await db.insertBatch(oldBatch);
-    }
 
-    _productController.loadProducts();
-    Get.back();
-    Get.snackbar(
-      'Success',
-      widget.product == null ? 'Product added' : 'Product updated',
-      snackPosition: SnackPosition.BOTTOM,
-    );
+      // Track if any batch deletions were skipped due to FK usage
+      bool skippedDeletionDueToUsage = false;
+      // For edit: sync top inputs into first batch if batches exist
+      if (_formBatches.isNotEmpty) {
+        // mirror controller fields to first batch entry
+        _formBatches[0]['cost_price'] = double.tryParse(_costPrice.text) ?? (_formBatches[0]['cost_price'] as num?)?.toDouble() ?? 0.0;
+        _formBatches[0]['selling_price'] = double.tryParse(_sellingPrice.text) ?? (_formBatches[0]['selling_price'] as num?)?.toDouble() ?? 0.0;
+        _formBatches[0]['mrp'] = double.tryParse(_mrp.text) ?? (_formBatches[0]['mrp'] as num?)?.toDouble() ?? 0.0;
+        _formBatches[0]['stock'] = double.tryParse(_stock.text) ?? ( (_formBatches[0]['stock'] as num?)?.toDouble() ?? 0.0 );
+        _formBatches[0]['expiry_date'] = _expiryDate ?? _formBatches[0]['expiry_date'];
+        // Delete removed batches (those not present in form)
+        final existingBatchRows = await dbi.query('batches', where: 'product_id = ?', whereArgs: [id]);
+        final keepIds = _formBatches.map((b) => b['id']).whereType<String>().toSet();
+        for (final r in existingBatchRows) {
+          final bid = r['id'] as String;
+          if (!keepIds.contains(bid)) {
+            // Check references in bill_items to avoid FK errors
+            final refs = await dbi.query('bill_items', where: 'batch_id = ?', whereArgs: [bid], limit: 1);
+            if (refs.isEmpty) {
+              await db.deleteBatchById(bid);
+            } else {
+              skippedDeletionDueToUsage = true;
+            }
+          }
+        }
+        for (final b in _formBatches) {
+          await db.insertBatch({
+            'id': b['id'] ?? 'BATCH_${id}_${DateTime.now().microsecondsSinceEpoch}',
+            'product_id': id,
+            'name': b['name'] ?? 'Batch',
+            'cost_price': (b['cost_price'] as num?)?.toDouble() ?? 0.0,
+            'selling_price': (b['selling_price'] as num?)?.toDouble() ?? 0.0,
+            'mrp': (b['mrp'] as num?)?.toDouble() ?? 0.0,
+            'expiry_date': (b['expiry_date'] is DateTime)
+                ? (b['expiry_date'] as DateTime?)?.toIso8601String()
+                : (b['expiry_date'] as DateTime?)?.toIso8601String(),
+            'stock': (b['stock'] as num?)?.toDouble() ?? 0.0,
+          });
+        }
+      } else {
+        final newBatch = {
+          'id': 'BATCH_${id}_NEW',
+          'product_id': id,
+          'name': 'New',
+          'cost_price': double.tryParse(_costPrice.text) ?? 0.0,
+          'selling_price': double.tryParse(_sellingPrice.text) ?? 0.0,
+          'mrp': double.tryParse(_mrp.text) ?? 0.0,
+          'expiry_date': _expiryDate?.toIso8601String(),
+          'stock': double.tryParse(_stock.text) ?? 0.0,
+        };
+        final oldBatch = {
+          'id': 'BATCH_${id}_OLD',
+          'product_id': id,
+          'name': 'Old',
+          'cost_price': newBatch['cost_price'],
+          'selling_price': newBatch['selling_price'],
+          'mrp': newBatch['mrp'],
+          'expiry_date': newBatch['expiry_date'],
+          'stock': 0.0,
+        };
+        await db.insertBatch(newBatch);
+        await db.insertBatch(oldBatch);
+      }
+
+      await _productController.loadProducts();
+      Get.back();
+      Get.snackbar(
+        'Success',
+        widget.product == null ? 'Product added' : 'Product updated',
+        snackPosition: SnackPosition.TOP,
+      );
+      // Inform if any batches could not be deleted due to being used in bills
+      // ignore: use_build_context_synchronously
+      // Note: Get.snackbar is fine here for user info
+      if (skippedDeletionDueToUsage == true) {
+        Get.snackbar(
+          'Note',
+          'Some batches were not deleted because they are used in bills.',
+          snackPosition: SnackPosition.TOP,
+        );
+      }
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to save product: ${e.toString()}', snackPosition: SnackPosition.TOP);
+    }
   }
 }
 

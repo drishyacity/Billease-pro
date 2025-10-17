@@ -37,7 +37,7 @@ class CustomerController extends GetxController {
     final db = DatabaseService();
     final existing = await db.findCustomerByPhoneOrName(phone: customer.phone, name: customer.name);
     if (existing != null) {
-      Get.snackbar('Duplicate', 'Customer already exists', snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('Duplicate', 'Customer already exists', snackPosition: SnackPosition.TOP);
       return;
     }
     await db.upsertCustomer(customer.toJson());
@@ -49,7 +49,7 @@ class CustomerController extends GetxController {
     final db = DatabaseService();
     final existing = await db.findCustomerByPhoneOrName(phone: updatedCustomer.phone, name: updatedCustomer.name);
     if (existing != null && existing['id'] != updatedCustomer.id) {
-      Get.snackbar('Duplicate', 'Another customer with same name/phone exists', snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('Duplicate', 'Another customer with same name/phone exists', snackPosition: SnackPosition.TOP);
       return;
     }
     await db.upsertCustomer(updatedCustomer.toJson());

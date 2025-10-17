@@ -16,6 +16,12 @@ class Bill {
   final double paidAmount;
   final BillStatus status;
   final String? notes;
+  final double finalDiscountValue;
+  final bool finalDiscountIsPercent;
+  final double extraAmount;
+  final String? extraAmountName;
+  final bool gstEnabled;
+  final bool inlineGst;
 
   Bill({
     String? id,
@@ -28,6 +34,12 @@ class Bill {
     this.paidAmount = 0.0,
     this.status = BillStatus.draft,
     this.notes,
+    this.finalDiscountValue = 0.0,
+    this.finalDiscountIsPercent = true,
+    this.extraAmount = 0.0,
+    this.extraAmountName,
+    this.gstEnabled = false,
+    this.inlineGst = true,
   }) : 
     id = id ?? const Uuid().v4(),
     date = date ?? DateTime.now();
@@ -43,6 +55,12 @@ class Bill {
     double? paidAmount,
     BillStatus? status,
     String? notes,
+    double? finalDiscountValue,
+    bool? finalDiscountIsPercent,
+    double? extraAmount,
+    String? extraAmountName,
+    bool? gstEnabled,
+    bool? inlineGst,
   }) {
     return Bill(
       id: id ?? this.id,
@@ -55,6 +73,12 @@ class Bill {
       paidAmount: paidAmount ?? this.paidAmount,
       status: status ?? this.status,
       notes: notes ?? this.notes,
+      finalDiscountValue: finalDiscountValue ?? this.finalDiscountValue,
+      finalDiscountIsPercent: finalDiscountIsPercent ?? this.finalDiscountIsPercent,
+      extraAmount: extraAmount ?? this.extraAmount,
+      extraAmountName: extraAmountName ?? this.extraAmountName,
+      gstEnabled: gstEnabled ?? this.gstEnabled,
+      inlineGst: inlineGst ?? this.inlineGst,
     );
   }
 
@@ -70,6 +94,12 @@ class Bill {
       'paidAmount': paidAmount,
       'status': status.toString(),
       'notes': notes,
+      'finalDiscountValue': finalDiscountValue,
+      'finalDiscountIsPercent': finalDiscountIsPercent,
+      'extraAmount': extraAmount,
+      'extraAmountName': extraAmountName,
+      'gstEnabled': gstEnabled,
+      'inlineGst': inlineGst,
     };
   }
 
@@ -103,6 +133,12 @@ class Bill {
       paidAmount: (paidNum)?.toDouble() ?? 0.0,
       status: resolvedStatus,
       notes: json['notes'],
+      finalDiscountValue: (json['finalDiscountValue'] as num?)?.toDouble() ?? 0.0,
+      finalDiscountIsPercent: (json['finalDiscountIsPercent'] as bool?) ?? (json['final_discount_is_percent'] == 1),
+      extraAmount: (json['extraAmount'] as num?)?.toDouble() ?? 0.0,
+      extraAmountName: json['extraAmountName'],
+      gstEnabled: (json['gstEnabled'] as bool?) ?? (json['gst_enabled'] == 1),
+      inlineGst: (json['inlineGst'] as bool?) ?? (json['inline_gst'] != 0),
     );
   }
 }

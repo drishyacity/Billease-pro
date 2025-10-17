@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
+import 'supabase_service.dart';
 
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
@@ -9,11 +11,20 @@ class DatabaseService {
   DatabaseService._internal();
 
   Database? _db;
+  String _currentUserKey = 'anonymous';
 
   Future<Database> get database async {
     if (_db != null) return _db!;
     _db = await _initDb();
     return _db!;
+  }
+
+  Future<void> setCurrentUser(String? userId) async {
+    final newKey = (userId == null || userId.isEmpty) ? 'anonymous' : userId;
+    if (newKey == _currentUserKey && _db != null) return;
+    _currentUserKey = newKey;
+    await close();
+    _db = await _initDb();
   }
 
   Future<List<Map<String, dynamic>>> getBatchesByProductId(String productId) async {
@@ -28,12 +39,13 @@ class DatabaseService {
     return rows.first;
   }
 
-  Future<void> adjustBatchStock({required String batchId, required int delta}) async {
+  Future<void> adjustBatchStock({required String batchId, required double delta}) async {
     final db = await database;
     await db.transaction((txn) async {
       final rows = await txn.query('batches', where: 'id = ?', whereArgs: [batchId], limit: 1);
       if (rows.isEmpty) return;
-      final current = (rows.first['stock'] as int?) ?? 0;
+      final currentNum = rows.first['stock'] as num?; // INTEGER affinity may still store REAL
+      final current = (currentNum ?? 0).toDouble();
       final newStock = current + delta; // delta negative to deduct
       await txn.update('batches', {'stock': newStock}, where: 'id = ?', whereArgs: [batchId]);
     });
@@ -41,10 +53,11 @@ class DatabaseService {
 
   Future<Database> _initDb() async {
     final docsDir = await getApplicationDocumentsDirectory();
-    final dbPath = p.join(docsDir.path, 'billease_pro.db');
+    final safeKey = _currentUserKey.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+    final dbPath = p.join(docsDir.path, 'billease_pro_${safeKey}.db');
     return await openDatabase(
       dbPath,
-      version: 2,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -52,9 +65,46 @@ class DatabaseService {
           await db.execute('ALTER TABLE bill_items ADD COLUMN mrp_override REAL');
           await db.execute('ALTER TABLE bill_items ADD COLUMN expiry_override TEXT');
         }
+        if (oldVersion < 3) {
+          await db.execute('CREATE INDEX IF NOT EXISTS idx_products_name ON products(name)');
+          await db.execute('CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode)');
+          await db.execute('CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)');
+          await db.execute('CREATE INDEX IF NOT EXISTS idx_batches_product_id ON batches(product_id)');
+        }
+        if (oldVersion < 4) {
+          try { await db.execute('ALTER TABLE products ADD COLUMN cgst_percentage REAL DEFAULT 0'); } catch (_) {}
+          try { await db.execute('ALTER TABLE products ADD COLUMN sgst_percentage REAL DEFAULT 0'); } catch (_) {}
+          try { await db.execute('ALTER TABLE products ADD COLUMN discount_percentage REAL DEFAULT 0'); } catch (_) {}
+        }
+        if (oldVersion < 5) {
+          try { await db.execute('ALTER TABLE bills ADD COLUMN final_discount_value REAL DEFAULT 0'); } catch (_) {}
+          try { await db.execute('ALTER TABLE bills ADD COLUMN final_discount_is_percent INTEGER DEFAULT 1'); } catch (_) {}
+          try { await db.execute('ALTER TABLE bills ADD COLUMN extra_amount REAL DEFAULT 0'); } catch (_) {}
+          try { await db.execute('ALTER TABLE bills ADD COLUMN extra_amount_name TEXT'); } catch (_) {}
+        }
+        if (oldVersion < 6) {
+          try { await db.execute('ALTER TABLE bills ADD COLUMN gst_enabled INTEGER DEFAULT 0'); } catch (_) {}
+          try { await db.execute('ALTER TABLE bills ADD COLUMN inline_gst INTEGER DEFAULT 1'); } catch (_) {}
+        }
+        if (oldVersion < 7) {
+          // Harden migration: ensure all expected bill columns exist
+          try { await db.execute('ALTER TABLE bills ADD COLUMN final_discount_value REAL DEFAULT 0'); } catch (_) {}
+          try { await db.execute('ALTER TABLE bills ADD COLUMN final_discount_is_percent INTEGER DEFAULT 1'); } catch (_) {}
+          try { await db.execute('ALTER TABLE bills ADD COLUMN extra_amount REAL DEFAULT 0'); } catch (_) {}
+          try { await db.execute('ALTER TABLE bills ADD COLUMN extra_amount_name TEXT'); } catch (_) {}
+          try { await db.execute('ALTER TABLE bills ADD COLUMN gst_enabled INTEGER DEFAULT 0'); } catch (_) {}
+          try { await db.execute('ALTER TABLE bills ADD COLUMN inline_gst INTEGER DEFAULT 1'); } catch (_) {}
+        }
       },
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
+        // Ensure critical columns exist even if DB version is already at latest
+        try { await db.execute('ALTER TABLE bills ADD COLUMN final_discount_value REAL DEFAULT 0'); } catch (_) {}
+        try { await db.execute('ALTER TABLE bills ADD COLUMN final_discount_is_percent INTEGER DEFAULT 1'); } catch (_) {}
+        try { await db.execute('ALTER TABLE bills ADD COLUMN extra_amount REAL DEFAULT 0'); } catch (_) {}
+        try { await db.execute('ALTER TABLE bills ADD COLUMN extra_amount_name TEXT'); } catch (_) {}
+        try { await db.execute('ALTER TABLE bills ADD COLUMN gst_enabled INTEGER DEFAULT 0'); } catch (_) {}
+        try { await db.execute('ALTER TABLE bills ADD COLUMN inline_gst INTEGER DEFAULT 1'); } catch (_) {}
       },
     );
   }
@@ -158,6 +208,12 @@ class DatabaseService {
         paid_amount REAL DEFAULT 0,
         status TEXT NOT NULL, -- draft | completed | partiallyPaid | fullyPaid
         notes TEXT,
+        final_discount_value REAL DEFAULT 0,
+        final_discount_is_percent INTEGER DEFAULT 1,
+        extra_amount REAL DEFAULT 0,
+        extra_amount_name TEXT,
+        gst_enabled INTEGER DEFAULT 0,
+        inline_gst INTEGER DEFAULT 1,
         FOREIGN KEY(customer_id) REFERENCES customers(id)
       )
     ''');
@@ -192,6 +248,14 @@ class DatabaseService {
         value TEXT
       )
     ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_products_name ON products(name)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_batches_product_id ON batches(product_id)');
+    // Ensure new columns exist on fresh DBs
+    await db.execute('ALTER TABLE products ADD COLUMN cgst_percentage REAL DEFAULT 0');
+    await db.execute('ALTER TABLE products ADD COLUMN sgst_percentage REAL DEFAULT 0');
+    await db.execute('ALTER TABLE products ADD COLUMN discount_percentage REAL DEFAULT 0');
   }
 
   Future<void> close() async {
@@ -253,6 +317,9 @@ class DatabaseService {
           'stock': b['stock'],
         }).toList(),
         'gstPercentage': p['gst_percentage'],
+        'cgstPercentage': p['cgst_percentage'] ?? 0.0,
+        'sgstPercentage': p['sgst_percentage'] ?? 0.0,
+        'discountPercentage': p['discount_percentage'] ?? 0.0,
         'lowStockAlert': p['low_stock_alert'],
         'expiryAlertDays': p['expiry_alert_days'],
         'createdAt': p['created_at'],
@@ -260,6 +327,57 @@ class DatabaseService {
       });
     }
     return result;
+  }
+
+  Future<List<Map<String, dynamic>>> getProductsWithRelationsPage({required int limit, required int offset}) async {
+    final db = await database;
+    final products = await db.query('products', limit: limit, offset: offset);
+    final List<Map<String, dynamic>> result = [];
+    for (final p in products) {
+      final batches = await db.query('batches', where: 'product_id = ?', whereArgs: [p['id']]);
+      final unitRows = await db.query('unit_conversions', where: 'product_id = ?', whereArgs: [p['id']]);
+      result.add({
+        'id': p['id'],
+        'name': p['name'],
+        'barcode': p['barcode'],
+        'category': p['category'],
+        'primaryUnit': p['primary_unit'],
+        'unitConversions': unitRows.map((e) => {
+          'baseUnit': e['base_unit'],
+          'convertedUnit': e['converted_unit'],
+          'conversionFactor': e['conversion_factor'],
+        }).toList(),
+        'batches': batches.map((b) => {
+          'id': b['id'],
+          'name': b['name'],
+          'costPrice': b['cost_price'],
+          'sellingPrice': b['selling_price'],
+          'mrp': b['mrp'],
+          'expiryDate': b['expiry_date'],
+          'stock': b['stock'],
+        }).toList(),
+        'gstPercentage': p['gst_percentage'],
+        'cgstPercentage': p['cgst_percentage'] ?? 0.0,
+        'sgstPercentage': p['sgst_percentage'] ?? 0.0,
+        'discountPercentage': p['discount_percentage'] ?? 0.0,
+        'lowStockAlert': p['low_stock_alert'],
+        'expiryAlertDays': p['expiry_alert_days'],
+        'createdAt': p['created_at'],
+        'updatedAt': p['updated_at'],
+      });
+    }
+    return result;
+  }
+
+  Future<void> deleteCurrentDbFile() async {
+    final docsDir = await getApplicationDocumentsDirectory();
+    final safeKey = _currentUserKey.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+    final dbPath = p.join(docsDir.path, 'billease_pro_${safeKey}.db');
+    await close();
+    final f = File(dbPath);
+    if (await f.exists()) {
+      await f.delete();
+    }
   }
 
   Future<void> insertProduct(Map<String, dynamic> product) async {
@@ -270,6 +388,18 @@ class DatabaseService {
   Future<void> upsertProduct(Map<String, dynamic> product) async {
     final db = await database;
     await db.insert('products', product, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> updateProductFields(Map<String, dynamic> product) async {
+    final db = await database;
+    final data = Map<String, Object?>.from(product);
+    await db.update(
+      'products',
+      data,
+      where: 'id = ?',
+      whereArgs: [product['id']],
+      conflictAlgorithm: ConflictAlgorithm.abort,
+    );
   }
 
   Future<Map<String, dynamic>?> findProductByBarcodeOrName({String? barcode, String? name}) async {
@@ -375,8 +505,19 @@ class DatabaseService {
         'paid_amount': bill['paidAmount'],
         'status': bill['status'],
         'notes': bill['notes'],
+        'final_discount_value': bill['finalDiscountValue'] ?? 0,
+        'final_discount_is_percent': (bill['finalDiscountIsPercent'] == true) ? 1 : 0,
+        'extra_amount': bill['extraAmount'] ?? 0,
+        'extra_amount_name': bill['extraAmountName'],
+        'gst_enabled': (bill['gstEnabled'] == true) ? 1 : 0,
+        'inline_gst': (bill['inlineGst'] == false) ? 0 : 1,
       };
-      await txn.insert('bills', billData, conflictAlgorithm: ConflictAlgorithm.replace);
+      final billCols = await txn.rawQuery('PRAGMA table_info(bills)');
+      final existingBillCols = billCols.map((e) => e['name'] as String).toSet();
+      final billFiltered = Map<String, Object?>.fromEntries(
+        billData.entries.where((e) => existingBillCols.contains(e.key)),
+      );
+      await txn.insert('bills', billFiltered, conflictAlgorithm: ConflictAlgorithm.replace);
       // Remove existing items for this bill to avoid duplicates on edit
       await txn.delete('bill_items', where: 'bill_id = ?', whereArgs: [bill['id']]);
       for (final item in items) {
@@ -396,7 +537,12 @@ class DatabaseService {
           'mrp_override': item['mrp_override'],
           'expiry_override': item['expiry_override'],
         };
-        await txn.insert('bill_items', itemData, conflictAlgorithm: ConflictAlgorithm.replace);
+        final itemCols = await txn.rawQuery('PRAGMA table_info(bill_items)');
+        final existingItemCols = itemCols.map((e) => e['name'] as String).toSet();
+        final itemFiltered = Map<String, Object?>.fromEntries(
+          itemData.entries.where((e) => existingItemCols.contains(e.key)),
+        );
+        await txn.insert('bill_items', itemFiltered, conflictAlgorithm: ConflictAlgorithm.replace);
       }
     });
   }
@@ -424,5 +570,22 @@ extension Maintenance on DatabaseService {
     await db.delete('unit_conversions');
     await db.delete('products');
     await db.delete('customers');
+  }
+}
+
+extension BackupHelpers on DatabaseService {
+  Future<List<Map<String, dynamic>>> getAllBatches() async {
+    final db = await database;
+    return db.query('batches');
+  }
+
+  Future<List<Map<String, dynamic>>> getAllUnitConversions() async {
+    final db = await database;
+    return db.query('unit_conversions');
+  }
+
+  Future<List<Map<String, dynamic>>> getAllSettings() async {
+    final db = await database;
+    return db.query('settings');
   }
 }
