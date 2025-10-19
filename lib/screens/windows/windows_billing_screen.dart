@@ -150,9 +150,9 @@ class _WindowsBillingScreenState extends State<WindowsBillingScreen> {
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
-          ActivateIntent: CallbackAction<Intent>(onInvoke: (_) { _saveBill(draft: false); return null; }),
-          RemoveSelectedIntent: CallbackAction<Intent>(onInvoke: (_) { _removeSelected(); return null; }),
-          FocusSearchIntent: CallbackAction<Intent>(onInvoke: (_) { _searchFocus.requestFocus(); return null; }),
+          ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) { _saveBill(draft: false); return null; }),
+          RemoveSelectedIntent: CallbackAction<RemoveSelectedIntent>(onInvoke: (_) { _removeSelected(); return null; }),
+          FocusSearchIntent: CallbackAction<FocusSearchIntent>(onInvoke: (_) { _searchFocus.requestFocus(); return null; }),
         },
         child: DefaultTabController(
           length: 2,
@@ -179,55 +179,50 @@ class _WindowsBillingScreenState extends State<WindowsBillingScreen> {
                         decoration: InputDecoration(labelText: 'Invoice Type'),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        SizedBox(
-                          width: 220,
-                          child: TextField(
-                            controller: _finalDiscountCtrl,
-                            decoration: InputDecoration(labelText: 'Final Discount'),
-                            keyboardType: TextInputType.number,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Row(children: [
-                          Checkbox(value: _finalDiscountIsPercent, onChanged: (v) => setState(() => _finalDiscountIsPercent = v ?? true)),
-                          const Text('As %'),
-                        ]),
-                        const SizedBox(width: 24),
-                        SizedBox(
-                          width: 220,
-                          child: TextField(
-                            controller: _extraAmountName,
-                            decoration: const InputDecoration(labelText: 'Extra Amount Name'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        SizedBox(
-                          width: 160,
-                          child: TextField(
-                            decoration: const InputDecoration(labelText: 'Extra Amount'),
-                            keyboardType: TextInputType.number,
-                            onChanged: (v) => setState(() => _extraAmount = double.tryParse(v) ?? 0),
-                          ),
-                        ),
-                        const Spacer(),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text('Subtotal: ₹${_computeSubtotal().toStringAsFixed(2)}'),
-                            Text('Grand: ₹${_computeGrandTotal().toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                          ],
-                        )
-                      ],
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 220,
+                      child: TextField(
+                        controller: _finalDiscountCtrl,
+                        decoration: const InputDecoration(labelText: 'Final Discount'),
+                        keyboardType: TextInputType.number,
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
+                    const SizedBox(width: 8),
+                    Row(children: [
+                      Checkbox(
+                        value: _finalDiscountIsPercent,
+                        onChanged: (v) => setState(() => _finalDiscountIsPercent = v ?? true),
+                      ),
+                      const Text('As %'),
+                    ]),
+                    const SizedBox(width: 24),
+                    SizedBox(
+                      width: 220,
+                      child: TextField(
+                        controller: _extraAmountName,
+                        decoration: const InputDecoration(labelText: 'Extra Amount Name'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 160,
+                      child: TextField(
+                        decoration: const InputDecoration(labelText: 'Extra Amount'),
+                        keyboardType: TextInputType.number,
+                        onChanged: (v) => setState(() => _extraAmount = double.tryParse(v) ?? 0),
+                      ),
+                    ),
+                    const Spacer(),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Expanded(child: OutlinedButton(onPressed: () => _saveBill(draft: true), child: const Text('Save as Draft'))),
-                        const SizedBox(width: 8),
-                        Expanded(child: ElevatedButton(onPressed: () => _saveBill(draft: false), child: const Text('Save Bill (Ctrl+S)'))),
+                        Text('Subtotal: ₹${_computeSubtotal().toStringAsFixed(2)}'),
+                        Text('Grand: ₹${_computeGrandTotal().toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
                       ],
                     )
                   ],
