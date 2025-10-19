@@ -43,6 +43,12 @@ void _showSuccess(BuildContext context, String msg) {
   );
 }
 
+String _supplierCodeFor(Supplier s) {
+  final base = s.id.replaceAll(RegExp('[^A-Z0-9]'), '').toUpperCase();
+  final tail = base.length >= 6 ? base.substring(base.length - 6) : base.padLeft(6, '0');
+  return 'SUP-$tail';
+}
+
 Future<void> _exportSuppliersExcel(BuildContext context) async {
   try {
     _showProcessing(context, 'Exporting to Excel...');
@@ -59,7 +65,7 @@ Future<void> _exportSuppliersExcel(BuildContext context) async {
     final list = c.filteredSuppliers.isNotEmpty ? c.filteredSuppliers : c.suppliers;
     for (final x in list) {
       final row = [
-        _codeFor(x), x.name, x.phone, x.email ?? '', x.gstin ?? '', x.totalPurchases, x.dueAmount, x.dueAmount > 0 ? 'Due' : 'OK'
+        _supplierCodeFor(x), x.name, x.phone, x.email ?? '', x.gstin ?? '', x.totalPurchases, x.dueAmount, x.dueAmount > 0 ? 'Due' : 'OK'
       ];
       sheet.appendRow(row.map<ex.CellValue?>((e) => _toCellValue(e)).toList());
     }
@@ -82,7 +88,7 @@ Future<void> _exportSuppliersPdf(BuildContext context) async {
     final list = c.filteredSuppliers.isNotEmpty ? c.filteredSuppliers : c.suppliers;
     final rows = <List<String>>[
       for (final x in list)
-        [ _codeFor(x), x.name, x.phone, x.email ?? '-', x.gstin ?? '-', x.totalPurchases.toStringAsFixed(2), x.dueAmount.toStringAsFixed(2), x.dueAmount > 0 ? 'Due' : 'OK' ]
+        [ _supplierCodeFor(x), x.name, x.phone, x.email ?? '-', x.gstin ?? '-', x.totalPurchases.toStringAsFixed(2), x.dueAmount.toStringAsFixed(2), x.dueAmount > 0 ? 'Due' : 'OK' ]
     ];
     pdf.addPage(pw.MultiPage(pageFormat: PdfPageFormat.a4.landscape, build: (_) => [
       pw.Text('Suppliers Export', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
