@@ -36,7 +36,28 @@ jobs:
         continue-on-error: true
 
       - name: Build Windows (release)
-        run: flutter build windows --release
+        run: |
+          New-Item -ItemType Directory -Force -Path build_logs | Out-Null
+          flutter build windows --release -v *>&1 | Tee-Object -FilePath build_logs\windows_build_verbose.log
+
+      - name: Print context around customers export (for debugging)
+        if: always()
+        run: |
+          $path = "lib/screens/windows/windows_customers_screen.dart"
+          if (Test-Path $path) {
+            Write-Host "--- Begin $path (line-numbered excerpt) ---"
+            $i = 0; Get-Content $path | ForEach-Object { $i++; "{0,5}: {1}" -f $i, $_ } | Select-Object -First 420 -Skip 350
+            Write-Host "--- End $path excerpt ---"
+          } else {
+            Write-Host "File not found: $path"
+          }
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-logs
+          path: build_logs/
 
       - name: Upload artifact (Windows exe)
         uses: actions/upload-artifact@v4
