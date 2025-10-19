@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:file_saver/file_saver.dart';
+import 'package:excel/excel.dart' as ex;
+import 'package:pdf/widgets.dart' as pw;
+import 'package:pdf/pdf.dart';
+import 'dart:typed_data';
 import 'package:billease_pro/controllers/supplier_controller.dart';
 import 'package:billease_pro/models/supplier_model.dart';
 
@@ -8,6 +13,34 @@ class WindowsSuppliersScreen extends StatefulWidget {
 
   @override
   State<WindowsSuppliersScreen> createState() => _WindowsSuppliersScreenState();
+}
+
+// Shared helpers (duplicate of products/customers screen for Windows UI)
+ex.CellValue? _toCellValue(Object? e) {
+  if (e == null) return null;
+  if (e is num) return ex.DoubleCellValue(e.toDouble());
+  return ex.TextCellValue(e.toString());
+}
+
+void _showProcessing(BuildContext context, String msg) {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => AlertDialog(
+      content: Row(children: [const CircularProgressIndicator(), const SizedBox(width: 12), Expanded(child: Text(msg))]),
+    ),
+  );
+}
+
+void _showSuccess(BuildContext context, String msg) {
+  showDialog(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('Success'),
+      content: Text(msg),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+    ),
+  );
 }
 
 Future<void> _exportSuppliersExcel(BuildContext context) async {
@@ -120,7 +153,7 @@ class _WindowsSuppliersScreenState extends State<WindowsSuppliersScreen> {
                 clipBehavior: Clip.antiAlias,
                 child: PaginatedDataTable(
                   header: const Text('Suppliers'),
-                  rowsPerPage: items.isEmpty ? 1 : _rowsPerPage.clamp(1, items.length),
+                  rowsPerPage: items.isEmpty ? 1 : (items.length < _rowsPerPage ? items.length : _rowsPerPage),
                   availableRowsPerPage: const [10, 25, 50, 100],
                   onRowsPerPageChanged: (v) => setState(() => _rowsPerPage = v ?? _rowsPerPage),
                   columns: const [

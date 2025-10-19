@@ -18,6 +18,34 @@ class WindowsCustomersScreen extends StatefulWidget {
   State<WindowsCustomersScreen> createState() => _WindowsCustomersScreenState();
 }
 
+// Shared helpers (duplicate of products screen for Windows UI)
+ex.CellValue? _toCellValue(Object? e) {
+  if (e == null) return null;
+  if (e is num) return ex.DoubleCellValue(e.toDouble());
+  return ex.TextCellValue(e.toString());
+}
+
+void _showProcessing(BuildContext context, String msg) {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => AlertDialog(
+      content: Row(children: [const CircularProgressIndicator(), const SizedBox(width: 12), Expanded(child: Text(msg))]),
+    ),
+  );
+}
+
+void _showSuccess(BuildContext context, String msg) {
+  showDialog(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('Success'),
+      content: Text(msg),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+    ),
+  );
+}
+
 class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
   final CustomerController controller = Get.find<CustomerController>();
   final BillController billController = Get.find<BillController>();
@@ -157,7 +185,7 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
                 clipBehavior: Clip.antiAlias,
                 child: PaginatedDataTable(
                   header: const Text('Customers'),
-                  rowsPerPage: _rowsPerPage.clamp(1, items.length),
+                  rowsPerPage: (items.length < _rowsPerPage ? items.length : _rowsPerPage),
                   availableRowsPerPage: const [10, 25, 50, 100],
                   onRowsPerPageChanged: (v) => setState(() => _rowsPerPage = v ?? _rowsPerPage),
                   columns: const [
