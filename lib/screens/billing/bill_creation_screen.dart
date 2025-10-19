@@ -30,6 +30,8 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
   double _finalDiscountAmount = 0.0; // deprecated by unified input below
   double _extraAmount = 0.0;
   final TextEditingController _extraAmountName = TextEditingController(text: 'Charges');
+  // User-entered Total GST % for wholesale total-GST mode
+  final TextEditingController _totalGstCtrl = TextEditingController(text: '0');
   bool _isEdit = false;
   String? _editBillId;
   // unified final discount input
@@ -56,6 +58,54 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
     final count = (res.first['c'] as int?) ?? 0;
     final seq = (count + 1).toString();
     return '$prefixDate$seq';
+  }
+
+  void _previewBill() {
+    if (_items.isEmpty) {
+      Get.snackbar('Error', 'Please add at least one item', snackPosition: SnackPosition.TOP);
+      return;
+    }
+    final totals = _computeTotals();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Bill Preview'),
+        content: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Customer: ${_customerNameController.text.isEmpty ? 'Customer' : _customerNameController.text}'),
+                const SizedBox(height: 8),
+                const Divider(),
+                ..._items.map((i) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(child: Text(i.productName, overflow: TextOverflow.ellipsis)),
+                          Text('${i.quantity.toStringAsFixed(2)} x ${i.unitPrice.toStringAsFixed(2)}'),
+                          Text('₹${_computeLineTotal(i).toStringAsFixed(2)}'),
+                        ],
+                      ),
+                    )),
+                const Divider(),
+                Text('Subtotal: ₹${totals['subtotal']!.toStringAsFixed(2)}'),
+                if (widget.billType == BillType.wholesale && _gstEnabled && !_inlineGst)
+                  Text('GST (${_totalGstCtrl.text.trim()}%): ₹${totals['gst']!.toStringAsFixed(2)}'),
+                if (_extraAmount > 0) Text('${_extraAmountName.text}: +₹${_extraAmount.toStringAsFixed(2)}'),
+                const SizedBox(height: 8),
+                Text('Grand Total: ₹${totals['grand']!.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+        ],
+      ),
+    );
   }
 
   void _refreshGstForItems() {
@@ -151,8 +201,9 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
         ),
         actions: [
           IconButton(
-            icon: Icon(isEstimate ? Icons.save : Icons.save),
-            onPressed: isEstimate ? _saveEstimate : _saveBill,
+            tooltip: 'Preview',
+            icon: const Icon(Icons.visibility_outlined),
+            onPressed: _previewBill,
           ),
         ],
       ),
@@ -177,29 +228,52 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
           if (widget.billType == BillType.wholesale)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Switch(
-                    value: _gstEnabled,
-                    onChanged: (v) => setState(() {
-                      _gstEnabled = v;
-                      _refreshGstForItems();
-                    }),
+                  Wrap(
+                    spacing: 12,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Switch(
+                            value: _gstEnabled,
+                            onChanged: (v) => setState(() {
+                              _gstEnabled = v;
+                              _refreshGstForItems();
+                            }),
+                          ),
+                          const Text('GST Bill'),
+                        ],
+                      ),
+                      if (_gstEnabled)
+                        SegmentedButton<bool>(
+                          segments: const [
+                            ButtonSegment(value: true, label: Text('Inline GST')),
+                            ButtonSegment(value: false, label: Text('Total GST')),
+                          ],
+                          selected: {_inlineGst},
+                          onSelectionChanged: (s) => setState(() {
+                            _inlineGst = s.first;
+                            _refreshGstForItems();
+                          }),
+                        ),
+                    ],
                   ),
-                  const Text('GST Bill'),
-                  const SizedBox(width: 16),
-                  if (_gstEnabled)
-                    SegmentedButton<bool>(
-                      segments: const [
-                        ButtonSegment(value: true, label: Text('Inline GST')),
-                        ButtonSegment(value: false, label: Text('Total GST')),
-                      ],
-                      selected: {_inlineGst},
-                      onSelectionChanged: (s) => setState(() {
-                        _inlineGst = s.first;
-                        _refreshGstForItems();
-                      }),
+                  if (_gstEnabled && !_inlineGst) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: 220,
+                      child: TextField(
+                        controller: _totalGstCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Total GST %'),
+                        onChanged: (_) => setState(() {}),
+                      ),
                     ),
+                  ],
                 ],
               ),
             ),
@@ -933,17 +1007,9 @@ class _BillCreationScreenState extends State<BillCreationScreen> {
 
     double gst = 0.0;
     if (widget.billType == BillType.wholesale && _gstEnabled && !_inlineGst) {
-      // Total GST computed using weighted average by line amounts
-      double weightSum = 0.0;
-      double weightedPct = 0.0;
-      for (final i in _items) {
-        final line = i.unitPrice * i.quantity;
-        final pct = ((i.cgst ?? 0) + (i.sgst ?? 0));
-        weightSum += line;
-        weightedPct += line * pct;
-      }
-      final avgPct = weightSum == 0 ? 0.0 : (weightedPct / weightSum);
-      gst = subtotal * (avgPct / 100.0);
+      // Use user-entered total GST %
+      final pct = double.tryParse(_totalGstCtrl.text.trim()) ?? 0.0;
+      gst = subtotal * (pct / 100.0);
     }
 
     // unified final discount

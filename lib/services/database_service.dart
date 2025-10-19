@@ -19,6 +19,30 @@ class DatabaseService {
     return _db!;
   }
 
+  // Purchases
+  Future<List<Map<String, dynamic>>> getAllPurchases() async {
+    final db = await database;
+    return db.query('purchases', orderBy: 'date DESC');
+  }
+
+  Future<void> insertPurchase(Map<String, dynamic> purchase, List<Map<String, dynamic>> items) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.insert('purchases', purchase, conflictAlgorithm: ConflictAlgorithm.replace);
+      await txn.delete('purchase_items', where: 'purchase_id = ?', whereArgs: [purchase['id']]);
+      for (final it in items) {
+        final data = Map<String, Object?>.from(it);
+        data['purchase_id'] = purchase['id'];
+        await txn.insert('purchase_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getPurchaseItems(String purchaseId) async {
+    final db = await database;
+    return db.query('purchase_items', where: 'purchase_id = ?', whereArgs: [purchaseId]);
+  }
+
   Future<void> setCurrentUser(String? userId) async {
     final newKey = (userId == null || userId.isEmpty) ? 'anonymous' : userId;
     if (newKey == _currentUserKey && _db != null) return;
@@ -57,7 +81,7 @@ class DatabaseService {
     final dbPath = p.join(docsDir.path, 'billease_pro_${safeKey}.db');
     return await openDatabase(
       dbPath,
-      version: 7,
+      version: 8,
       onCreate: _onCreate,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -95,6 +119,32 @@ class DatabaseService {
           try { await db.execute('ALTER TABLE bills ADD COLUMN gst_enabled INTEGER DEFAULT 0'); } catch (_) {}
           try { await db.execute('ALTER TABLE bills ADD COLUMN inline_gst INTEGER DEFAULT 1'); } catch (_) {}
         }
+        if (oldVersion < 8) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS purchases (
+              id TEXT PRIMARY KEY,
+              date TEXT NOT NULL,
+              vendor_name TEXT,
+              total_amount REAL NOT NULL,
+              paid_amount REAL DEFAULT 0,
+              notes TEXT
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS purchase_items (
+              id TEXT PRIMARY KEY,
+              purchase_id TEXT NOT NULL,
+              product_id TEXT,
+              description TEXT,
+              quantity REAL NOT NULL,
+              unit_price REAL NOT NULL,
+              total_price REAL NOT NULL,
+              FOREIGN KEY(purchase_id) REFERENCES purchases(id) ON DELETE CASCADE,
+              FOREIGN KEY(product_id) REFERENCES products(id)
+            )
+          ''');
+          await db.execute('CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase_id ON purchase_items(purchase_id)');
+        }
       },
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
@@ -120,6 +170,32 @@ class DatabaseService {
         updated_at TEXT
       )
     ''');
+
+    // Purchases (to support dashboard sales vs purchases and bookkeeping)
+    await db.execute('''
+      CREATE TABLE purchases (
+        id TEXT PRIMARY KEY,
+        date TEXT NOT NULL,
+        vendor_name TEXT,
+        total_amount REAL NOT NULL,
+        paid_amount REAL DEFAULT 0,
+        notes TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE purchase_items (
+        id TEXT PRIMARY KEY,
+        purchase_id TEXT NOT NULL,
+        product_id TEXT,
+        description TEXT,
+        quantity REAL NOT NULL,
+        unit_price REAL NOT NULL,
+        total_price REAL NOT NULL,
+        FOREIGN KEY(purchase_id) REFERENCES purchases(id) ON DELETE CASCADE,
+        FOREIGN KEY(product_id) REFERENCES products(id)
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase_id ON purchase_items(purchase_id)');
 
     // Company profile
     await db.execute('''

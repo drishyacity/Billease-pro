@@ -606,8 +606,52 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
             }
           }
         }
+        // NEW→OLD rollover (OVERWRITE) for edits: use previous DB value of NEW to set OLD before we upsert form batches
+        try {
+          Map<String, dynamic>? dbNew;
+          Map<String, dynamic>? dbOld;
+          for (final r in existingBatchRows) {
+            final nm = (r['name'] as String?)?.trim().toLowerCase();
+            if (nm == 'new') dbNew = r;
+            if (nm == 'old') dbOld = r;
+          }
+          if (dbNew != null) {
+            final double prevNewStock = ((dbNew!['stock'] as num?)?.toDouble() ?? 0.0);
+            if (dbOld != null) {
+              // overwrite OLD with previous NEW values
+              await dbi.update('batches', {
+                'stock': prevNewStock,
+                'cost_price': dbNew!['cost_price'],
+                'selling_price': dbNew!['selling_price'],
+                'mrp': dbNew!['mrp'],
+                'expiry_date': dbNew!['expiry_date'],
+              }, where: 'id = ?', whereArgs: [dbOld!['id']]);
+            } else {
+              // create OLD from previous NEW values
+              await dbi.insert('batches', {
+                'id': 'BATCH_${id}_OLD',
+                'product_id': id,
+                'name': 'Old',
+                'cost_price': dbNew!['cost_price'],
+                'selling_price': dbNew!['selling_price'],
+                'mrp': dbNew!['mrp'],
+                'expiry_date': dbNew!['expiry_date'],
+                'stock': prevNewStock,
+              });
+              // reflect created id in form if there's an Old entry
+              for (final b in _formBatches) {
+                if ((b['name'] as String?)?.trim().toLowerCase() == 'old' && (b['id'] == null)) {
+                  b['id'] = 'BATCH_${id}_OLD';
+                }
+              }
+            }
+          }
+        } catch (_) {}
+
+        // Upsert form batches; ensure we don't overwrite OLD back to 0
         for (final b in _formBatches) {
-          await db.insertBatch({
+          final isOld = ((b['name'] as String?)?.trim().toLowerCase() == 'old');
+          final upsert = <String, Object?>{
             'id': b['id'] ?? 'BATCH_${id}_${DateTime.now().microsecondsSinceEpoch}',
             'product_id': id,
             'name': b['name'] ?? 'Batch',
@@ -618,7 +662,18 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                 ? (b['expiry_date'] as DateTime?)?.toIso8601String()
                 : (b['expiry_date'] as DateTime?)?.toIso8601String(),
             'stock': (b['stock'] as num?)?.toDouble() ?? 0.0,
-          });
+          };
+          if (isOld) {
+            // read DB Old (post-rollover) to preserve correct stock
+            try {
+              final oldRows = await dbi.query('batches', where: 'product_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?))', whereArgs: [id, 'Old'], limit: 1);
+              if (oldRows.isNotEmpty) {
+                upsert['id'] = oldRows.first['id'];
+                upsert['stock'] = (oldRows.first['stock'] as num?)?.toDouble() ?? upsert['stock'];
+              }
+            } catch (_) {}
+          }
+          await db.insertBatch(upsert);
         }
       } else {
         final newBatch = {

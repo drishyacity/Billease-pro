@@ -139,6 +139,10 @@ class ProductDetailScreen extends StatelessWidget {
                 });
                 await productController.loadProducts();
                 Navigator.pop(context);
+                try {
+                  final updated = productController.products.firstWhere((p) => p.id == product.id);
+                  Get.off(() => ProductDetailScreen(product: updated));
+                } catch (_) {}
                 Get.snackbar('Saved', 'Batch updated', snackPosition: SnackPosition.TOP);
               },
               child: const Text('Save'),

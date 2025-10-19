@@ -13,6 +13,7 @@ import 'package:billease_pro/controllers/customer_controller.dart';
 import 'services/supabase_service.dart';
 import 'screens/dashboard/dashboard_screen.dart';
 import 'screens/onboarding/onboarding_basic_details_screen.dart';
+import 'screens/windows/windows_shell.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -78,7 +79,9 @@ class MyApp extends StatelessWidget {
               if (profSnap.data == null) {
                 return const OnboardingBasicDetailsScreen();
               }
-              return const DashboardScreen();
+              return Platform.isWindows
+                  ? const WindowsShell()
+                  : const DashboardScreen();
             },
           );
         },
