@@ -374,13 +374,7 @@ Future<void> _exportCustomersExcel(BuildContext context) async {
     final c = Get.find<CustomerController>();
     final excel = ex.Excel.createExcel();
     const sheetName = 'Customers';
-    excel.setDefaultSheet(sheetName);
-    late final ex.Sheet sheet;
-    if (excel.sheets.containsKey(sheetName)) {
-      sheet = excel.sheets[sheetName]!;
-    } else {
-      sheet = excel[sheetName];
-    }
+    final sheet = excel[sheetName];
     final headers = ['code','name','phone','email','gstin','total_sale','due','status'];
     sheet.appendRow(headers.map((h) => ex.TextCellValue(h)).toList());
     final list = c.filteredCustomers.isNotEmpty ? c.filteredCustomers : c.customers;
@@ -391,7 +385,7 @@ Future<void> _exportCustomersExcel(BuildContext context) async {
       sheet.appendRow(row.map<ex.CellValue?>((e) => _toCellValue(e)).toList());
     }
     final bytes = excel.encode()!;
-    FileSaver.instance.saveFile(name: 'customers_export', bytes: Uint8List.fromList(bytes), ext: 'xlsx', mimeType: MimeType.microsoftExcel);
+    await FileSaver.instance.saveFile(name: 'customers_export', bytes: Uint8List.fromList(bytes), ext: 'xlsx', mimeType: MimeType.microsoftExcel);
     _showSuccess(context, 'Exported to Excel');
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to export Excel: $e')));
@@ -417,7 +411,7 @@ Future<void> _exportCustomersPdf(BuildContext context) async {
       pw.Table.fromTextArray(headers: headers, data: rows),
     ]));
     final bytes = await pdf.save();
-    FileSaver.instance.saveFile(name: 'customers_export', bytes: Uint8List.fromList(bytes), ext: 'pdf', mimeType: MimeType.pdf);
+    await FileSaver.instance.saveFile(name: 'customers_export', bytes: Uint8List.fromList(bytes), ext: 'pdf', mimeType: MimeType.pdf);
     _showSuccess(context, 'Exported to PDF');
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to export PDF: $e')));
