@@ -161,7 +161,11 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
                 child: TextField(
                   controller: _searchCtrl,
                   decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search customers'),
-                  onChanged: (v) => setState(() => controller.filterCustomers(v)),
+                  onChanged: (v) {
+                    setState(() {
+                      controller.filterCustomers(v);
+                    });
+                  },
                 ),
               ),
               const SizedBox(width: 8),
@@ -187,7 +191,11 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
                   header: const Text('Customers'),
                   rowsPerPage: (items.length < _rowsPerPage ? items.length : _rowsPerPage),
                   availableRowsPerPage: const [10, 25, 50, 100],
-                  onRowsPerPageChanged: (v) => setState(() => _rowsPerPage = v ?? _rowsPerPage),
+                  onRowsPerPageChanged: (v) {
+                    setState(() {
+                      _rowsPerPage = v ?? _rowsPerPage;
+                    });
+                  },
                   columns: const [
                     DataColumn(label: Text('Select')),
                     DataColumn(label: Text('Customer Code')),
@@ -208,7 +216,15 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
                     onCall: (p) => _launchTel(p),
                     onEmail: (e) => _launchEmail(e),
                     selectedIds: _selectedIds,
-                    onSelectionChanged: (id, sel) => setState(() { if (sel) _selectedIds.add(id); else _selectedIds.remove(id); }),
+                    onSelectionChanged: (id, sel) {
+                      setState(() {
+                        if (sel) {
+                          _selectedIds.add(id);
+                        } else {
+                          _selectedIds.remove(id);
+                        }
+                      });
+                    },
                     onDelete: (c) async {
                       final ok = await showDialog<bool>(
                         context: context,
