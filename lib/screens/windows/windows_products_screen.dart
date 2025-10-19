@@ -10,6 +10,7 @@ import 'package:pdf/pdf.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import 'package:billease_pro/screens/products/near_expiry_grouped_screen.dart';
+import 'package:billease_pro/services/database_service.dart';
 
 class WindowsProductsScreen extends StatefulWidget {
   const WindowsProductsScreen({super.key});
@@ -20,7 +21,7 @@ class WindowsProductsScreen extends StatefulWidget {
 
 // ===== Helpers: Export/Import for Windows Products Screen =====
 
-CellValue? _toCellValue(Object? e) {
+ex.CellValue? _toCellValue(Object? e) {
   if (e == null) return null;
   if (e is num) return ex.DoubleCellValue(e.toDouble());
   return ex.TextCellValue(e.toString());
