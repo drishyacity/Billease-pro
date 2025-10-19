@@ -325,7 +325,12 @@ class _CustomersSource extends DataTableSource {
         DataCell(Text(_codeFor(c))),
         DataCell(Text(c.name)),
         DataCell(Row(children: [Text(c.phone), const SizedBox(width: 8), IconButton(icon: const Icon(Icons.call), tooltip: 'Call', onPressed: () => onCall(c.phone))])),
-        DataCell(Row(children: [Text(c.email ?? '-'), if ((c.email ?? '').isNotEmpty) ...[const SizedBox(width: 8), IconButton(icon: const Icon(Icons.email_outlined), tooltip: 'Email', onPressed: () => onEmail(c.email!))]])),
+        DataCell(Row(children: [
+          Text(c.email ?? '-'),
+          (c.email ?? '').isNotEmpty
+              ? Row(children: [const SizedBox(width: 8), IconButton(icon: const Icon(Icons.email_outlined), tooltip: 'Email', onPressed: () => onEmail(c.email!))])
+              : const SizedBox.shrink(),
+        ])),
         DataCell(Text(c.gstin ?? '-')),
         DataCell(Text('₹${c.totalPurchases.toStringAsFixed(2)}')),
         DataCell(Text('₹${c.dueAmount.toStringAsFixed(2)}')),
