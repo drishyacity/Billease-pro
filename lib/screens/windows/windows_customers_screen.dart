@@ -376,13 +376,28 @@ Future<void> _exportCustomersExcel(BuildContext context) async {
     const sheetName = 'Customers';
     final sheet = excel[sheetName];
     final headers = ['code','name','phone','email','gstin','total_sale','due','status'];
-    sheet.appendRow(headers.map((h) => ex.TextCellValue(h)).toList());
+    final headerCells = <ex.CellValue>[];
+    for (final h in headers) {
+      headerCells.add(ex.TextCellValue(h));
+    }
+    sheet.appendRow(headerCells);
     final list = c.filteredCustomers.isNotEmpty ? c.filteredCustomers : c.customers;
     for (final x in list) {
-      final row = [
-        _codeForStatic(x), x.name, x.phone, x.email ?? '', x.gstin ?? '', x.totalPurchases, x.dueAmount, x.dueAmount > 0 ? 'Due' : 'OK'
+      final values = [
+        _codeForStatic(x),
+        x.name,
+        x.phone,
+        x.email ?? '',
+        x.gstin ?? '',
+        x.totalPurchases,
+        x.dueAmount,
+        x.dueAmount > 0 ? 'Due' : 'OK',
       ];
-      sheet.appendRow(row.map<ex.CellValue?>((e) => _toCellValue(e)).toList());
+      final cells = <ex.CellValue?>[];
+      for (final v in values) {
+        cells.add(_toCellValue(v));
+      }
+      sheet.appendRow(cells);
     }
     final bytes = excel.encode()!;
     await FileSaver.instance.saveFile(name: 'customers_export', bytes: Uint8List.fromList(bytes), ext: 'xlsx', mimeType: MimeType.microsoftExcel);
