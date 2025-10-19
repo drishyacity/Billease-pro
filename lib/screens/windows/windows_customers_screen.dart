@@ -29,20 +29,20 @@ void _showProcessing(BuildContext context, String msg) {
   showDialog(
     context: context,
     barrierDismissible: false,
-    builder: (_) => AlertDialog(
+    builder: (_) { return AlertDialog(
       content: Row(children: [const CircularProgressIndicator(), const SizedBox(width: 12), Expanded(child: Text(msg))]),
-    ),
+    ); },
   );
 }
 
 void _showSuccess(BuildContext context, String msg) {
   showDialog(
     context: context,
-    builder: (_) => AlertDialog(
+    builder: (_) { return AlertDialog(
       title: const Text('Success'),
       content: Text(msg),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
-    ),
+      actions: [TextButton(onPressed: () { Navigator.pop(context); }, child: const Text('OK'))],
+    ); },
   );
 }
 
@@ -67,7 +67,7 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
     final gstCtrl = TextEditingController(text: existing?.gstin ?? '');
     final result = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) { return AlertDialog(
         title: Text(existing == null ? 'Add Customer' : 'Edit Customer'),
         content: SizedBox(
           width: 480,
@@ -87,10 +87,10 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
+          TextButton(onPressed: () { Navigator.pop(context, false); }, child: const Text('Cancel')),
+          ElevatedButton(onPressed: () { Navigator.pop(context, true); }, child: const Text('Save')),
         ],
-      ),
+      ); },
     );
     if (result == true) {
       if (existing == null) {
@@ -213,8 +213,8 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
                     items: items,
                     lastPurchaseFor: _lastPurchaseFor,
                     onEdit: (c) => _addOrEditCustomer(existing: c),
-                    onCall: (p) => _launchTel(p),
-                    onEmail: (e) => _launchEmail(e),
+                    onCall: (p) { _launchTel(p); },
+                    onEmail: (e) { _launchEmail(e); },
                     selectedIds: _selectedIds,
                     onSelectionChanged: (id, sel) {
                       setState(() {
@@ -228,14 +228,14 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
                     onDelete: (c) async {
                       final ok = await showDialog<bool>(
                         context: context,
-                        builder: (_) => AlertDialog(
+                        builder: (_) { return AlertDialog(
                           title: const Text('Delete Customer'),
                           content: Text('Are you sure you want to delete ${c.name}?'),
                           actions: [
-                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-                            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                            TextButton(onPressed: () { Navigator.pop(context, false); }, child: const Text('Cancel')),
+                            FilledButton(onPressed: () { Navigator.pop(context, true); }, child: const Text('Delete')),
                           ],
-                        ),
+                        ); },
                       );
                       if (ok == true) {
                         controller.deleteCustomer(c.id);
@@ -254,20 +254,22 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
               onPressed: _selectedIds.isEmpty ? null : () async {
                 final ok = await showDialog<bool>(
                   context: context,
-                  builder: (_) => AlertDialog(
+                  builder: (_) { return AlertDialog(
                     title: const Text('Delete Selected'),
                     content: Text('Delete ${_selectedIds.length} selected customers?'),
                     actions: [
-                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-                      FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                      TextButton(onPressed: () { Navigator.pop(context, false); }, child: const Text('Cancel')),
+                      FilledButton(onPressed: () { Navigator.pop(context, true); }, child: const Text('Delete')),
                     ],
-                  ),
+                  ); },
                 );
                 if (ok == true) {
                   for (final id in _selectedIds.toList()) {
                     await controller.deleteCustomer(id);
                   }
-                  setState(() => _selectedIds.clear());
+                  setState(() {
+                    _selectedIds.clear();
+                  });
                 }
               },
               icon: const Icon(Icons.delete_outline),
@@ -321,14 +323,14 @@ class _CustomersSource extends DataTableSource {
         notifyListeners();
       },
       cells: [
-        DataCell(Checkbox(value: selectedIds.contains(c.id), onChanged: (v) => onSelectionChanged(c.id, v ?? false))),
+        DataCell(Checkbox(value: selectedIds.contains(c.id), onChanged: (v) { onSelectionChanged(c.id, v ?? false); })),
         DataCell(Text(_codeFor(c))),
         DataCell(Text(c.name)),
-        DataCell(Row(children: [Text(c.phone), const SizedBox(width: 8), IconButton(icon: const Icon(Icons.call), tooltip: 'Call', onPressed: () => onCall(c.phone))])),
+        DataCell(Row(children: [Text(c.phone), const SizedBox(width: 8), IconButton(icon: const Icon(Icons.call), tooltip: 'Call', onPressed: () { onCall(c.phone); })])),
         DataCell(Row(children: [
           Text(c.email ?? '-'),
           (c.email ?? '').isNotEmpty
-              ? Row(children: [const SizedBox(width: 8), IconButton(icon: const Icon(Icons.email_outlined), tooltip: 'Email', onPressed: () => onEmail(c.email!))])
+              ? Row(children: [const SizedBox(width: 8), IconButton(icon: const Icon(Icons.email_outlined), tooltip: 'Email', onPressed: () { onEmail(c.email!); })])
               : const SizedBox.shrink(),
         ])),
         DataCell(Text(c.gstin ?? '-')),
@@ -337,8 +339,8 @@ class _CustomersSource extends DataTableSource {
         DataCell(Text(_statusFor(c))),
         DataCell(Text(last == null ? '-' : '${last.day}/${last.month}/${last.year}')),
         DataCell(Row(children: [
-          IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'Edit', onPressed: () => onEdit(c)),
-          IconButton(icon: const Icon(Icons.delete_outline), tooltip: 'Delete', onPressed: () => onDelete(c)),
+          IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'Edit', onPressed: () { onEdit(c); }),
+          IconButton(icon: const Icon(Icons.delete_outline), tooltip: 'Delete', onPressed: () { onDelete(c); }),
         ])),
       ],
     );
