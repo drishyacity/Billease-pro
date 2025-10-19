@@ -81,7 +81,7 @@ class DatabaseService {
     final dbPath = p.join(docsDir.path, 'billease_pro_${safeKey}.db');
     return await openDatabase(
       dbPath,
-      version: 8,
+      version: 9,
       onCreate: _onCreate,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -144,6 +144,22 @@ class DatabaseService {
             )
           ''');
           await db.execute('CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase_id ON purchase_items(purchase_id)');
+        }
+        if (oldVersion < 9) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS suppliers (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              phone TEXT NOT NULL,
+              email TEXT,
+              address TEXT,
+              gstin TEXT,
+              total_purchases REAL DEFAULT 0,
+              due_amount REAL DEFAULT 0,
+              created_at TEXT,
+              updated_at TEXT
+            )
+          ''');
         }
       },
       onConfigure: (db) async {
@@ -259,6 +275,22 @@ class DatabaseService {
     // Customers
     await db.execute('''
       CREATE TABLE customers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        email TEXT,
+        address TEXT,
+        gstin TEXT,
+        total_purchases REAL DEFAULT 0,
+        due_amount REAL DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+      )
+    ''');
+
+    // Suppliers
+    await db.execute('''
+      CREATE TABLE suppliers (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         phone TEXT NOT NULL,
@@ -634,6 +666,49 @@ class DatabaseService {
       await txn.delete('bill_items', where: 'bill_id = ?', whereArgs: [billId]);
       await txn.delete('bills', where: 'id = ?', whereArgs: [billId]);
     });
+  }
+}
+
+// Suppliers CRUD
+extension SuppliersApi on DatabaseService {
+  Future<List<Map<String, dynamic>>> getAllSuppliers() async {
+    final db = await database;
+    return db.query('suppliers');
+  }
+
+  Future<void> upsertSupplier(Map<String, dynamic> supplier) async {
+    final db = await database;
+    final data = <String, Object?>{
+      'id': supplier['id'],
+      'name': supplier['name'],
+      'phone': supplier['phone'],
+      'email': supplier['email'],
+      'address': supplier['address'],
+      'gstin': supplier['gstin'],
+      'total_purchases': supplier['totalPurchases'] ?? 0,
+      'due_amount': supplier['dueAmount'] ?? 0,
+      'created_at': supplier['createdAt'],
+      'updated_at': supplier['updatedAt'],
+    };
+    await db.insert('suppliers', data, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteSupplierById(String id) async {
+    final db = await database;
+    await db.delete('suppliers', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<Map<String, dynamic>?> findSupplierByPhoneOrName({String? phone, String? name}) async {
+    final db = await database;
+    if (phone != null && phone.isNotEmpty) {
+      final rows = await db.query('suppliers', where: 'phone = ?', whereArgs: [phone], limit: 1);
+      if (rows.isNotEmpty) return rows.first;
+    }
+    if (name != null && name.isNotEmpty) {
+      final rows = await db.query('suppliers', where: 'LOWER(name) = LOWER(?)', whereArgs: [name], limit: 1);
+      if (rows.isNotEmpty) return rows.first;
+    }
+    return null;
   }
 }
 

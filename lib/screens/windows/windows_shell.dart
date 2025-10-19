@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import 'package:billease_pro/screens/windows/windows_dashboard_screen.dart';
 import 'package:billease_pro/screens/windows/windows_customers_screen.dart';
 import 'package:billease_pro/screens/windows/windows_products_screen.dart';
+import 'package:billease_pro/screens/windows/windows_suppliers_screen.dart';
 import 'package:billease_pro/screens/windows/windows_billing_screen.dart';
 import 'package:billease_pro/screens/windows/windows_bills_screen.dart';
 import 'package:billease_pro/screens/windows/windows_reports_screen.dart';
@@ -23,6 +24,7 @@ class _WindowsShellState extends State<WindowsShell> {
   final List<NavigationDestination> _destinations = const [
     NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Dashboard'),
     NavigationDestination(icon: Icon(Icons.people_alt_outlined), selectedIcon: Icon(Icons.people_alt), label: 'Customers'),
+    NavigationDestination(icon: Icon(Icons.local_shipping_outlined), selectedIcon: Icon(Icons.local_shipping), label: 'Suppliers'),
     NavigationDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2), label: 'Products'),
     NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: 'Billing'),
     NavigationDestination(icon: Icon(Icons.history_outlined), selectedIcon: Icon(Icons.history), label: 'Bills'),
@@ -37,14 +39,16 @@ class _WindowsShellState extends State<WindowsShell> {
       case 1:
         return const WindowsCustomersScreen();
       case 2:
-        return const WindowsProductsScreen();
+        return const WindowsSuppliersScreen();
       case 3:
-        return const WindowsBillingScreen();
+        return const WindowsProductsScreen();
       case 4:
-        return const WindowsBillsScreen();
+        return const WindowsBillingScreen();
       case 5:
-        return const WindowsReportsScreen();
+        return const WindowsBillsScreen();
       case 6:
+        return const WindowsReportsScreen();
+      case 7:
         return const WindowsSettingsScreen();
       default:
         return const WindowsDashboardScreen();
@@ -55,11 +59,12 @@ class _WindowsShellState extends State<WindowsShell> {
     final commands = [
       ('Dashboard', Icons.dashboard, 0),
       ('Customers', Icons.people_alt, 1),
-      ('Products', Icons.inventory_2, 2),
-      ('Billing', Icons.receipt_long, 3),
-      ('Bills', Icons.history, 4),
-      ('Reports', Icons.analytics, 5),
-      ('Settings', Icons.settings, 6),
+      ('Suppliers', Icons.local_shipping, 2),
+      ('Products', Icons.inventory_2, 3),
+      ('Billing', Icons.receipt_long, 4),
+      ('Bills', Icons.history, 5),
+      ('Reports', Icons.analytics, 6),
+      ('Settings', Icons.settings, 7),
     ];
     await showDialog(
       context: context,
@@ -149,6 +154,7 @@ class _WindowsShellState extends State<WindowsShell> {
                 destinations: const [
                   NavigationRailDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: Text('Dashboard')),
                   NavigationRailDestination(icon: Icon(Icons.people_alt_outlined), selectedIcon: Icon(Icons.people_alt), label: Text('Customers')),
+                  NavigationRailDestination(icon: Icon(Icons.local_shipping_outlined), selectedIcon: Icon(Icons.local_shipping), label: Text('Suppliers')),
                   NavigationRailDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2), label: Text('Products')),
                   NavigationRailDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: Text('Billing')),
                   NavigationRailDestination(icon: Icon(Icons.history_outlined), selectedIcon: Icon(Icons.history), label: Text('Bills')),

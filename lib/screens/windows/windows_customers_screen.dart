@@ -144,10 +144,14 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
                   availableRowsPerPage: const [10, 25, 50, 100],
                   onRowsPerPageChanged: (v) => setState(() => _rowsPerPage = v ?? _rowsPerPage),
                   columns: const [
+                    DataColumn(label: Text('Customer Code')),
                     DataColumn(label: Text('Name')),
                     DataColumn(label: Text('Phone')),
                     DataColumn(label: Text('Email')),
+                    DataColumn(label: Text('GSTIN')),
+                    DataColumn(label: Text('Total Sale')),
                     DataColumn(label: Text('Due')),
+                    DataColumn(label: Text('Status')),
                     DataColumn(label: Text('Last Purchase')),
                     DataColumn(label: Text('Actions')),
                   ],
@@ -191,10 +195,14 @@ class _CustomersSource extends DataTableSource {
     return DataRow.byIndex(
       index: index,
       cells: [
+        DataCell(Text(_codeFor(c))),
         DataCell(Text(c.name)),
         DataCell(Row(children: [Text(c.phone), const SizedBox(width: 8), IconButton(icon: const Icon(Icons.call), tooltip: 'Call', onPressed: () => onCall(c.phone))])),
         DataCell(Row(children: [Text(c.email ?? '-'), if ((c.email ?? '').isNotEmpty) ...[const SizedBox(width: 8), IconButton(icon: const Icon(Icons.email_outlined), tooltip: 'Email', onPressed: () => onEmail(c.email!))]])),
+        DataCell(Text(c.gstin ?? '-')),
+        DataCell(Text('₹${c.totalPurchases.toStringAsFixed(2)}')),
         DataCell(Text('₹${c.dueAmount.toStringAsFixed(2)}')),
+        DataCell(Text(_statusFor(c))),
         DataCell(Text(last == null ? '-' : '${last.day}/${last.month}/${last.year}')),
         DataCell(Row(children: [
           IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'Edit', onPressed: () => onEdit(c)),
@@ -211,4 +219,16 @@ class _CustomersSource extends DataTableSource {
 
   @override
   int get selectedRowCount => 0;
+
+  String _codeFor(Customer c) {
+    // Auto-generated code from id, display-only
+    final base = c.id.replaceAll(RegExp('[^A-Z0-9]'), '').toUpperCase();
+    final tail = base.length >= 6 ? base.substring(base.length - 6) : base.padLeft(6, '0');
+    return 'CUST-$tail';
+  }
+
+  String _statusFor(Customer c) {
+    if (c.dueAmount > 0) return 'Due';
+    return 'OK';
+  }
 }

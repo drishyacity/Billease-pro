@@ -20,6 +20,12 @@ class WindowsDashboardScreen extends StatelessWidget {
         .where((b) => b.date.year == today.year && b.date.month == today.month && b.date.day == today.day)
         .fold<double>(0.0, (sum, b) => sum + b.totalAmount);
 
+    final monthStart = DateTime(today.year, today.month, 1);
+    final monthBills = billController.bills.where((b) => b.status != BillStatus.draft && !b.date.isBefore(monthStart)).toList();
+    final monthlySale = monthBills.fold<double>(0.0, (s, b) => s + b.totalAmount);
+    final pendingPayments = monthBills.fold<double>(0.0, (s, b) => s + (b.totalAmount - b.paidAmount));
+    final totalProducts = productController.products.length;
+
     final lowStockCount = productController.products.where((p) => p.isLowStock).length;
     final nearExpiryCount = productController.products.where((p) => p.hasNearExpiryBatches()).length;
 
@@ -43,10 +49,17 @@ class WindowsDashboardScreen extends StatelessWidget {
               _statCard(context, 'Near Expiry', '$nearExpiryCount', Icons.timer, Colors.orange, onTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Use Products page filters for Near Expiry')));
               }),
+              _statCard(context, 'Monthly Sale', '₹${monthlySale.toStringAsFixed(2)}', Icons.calendar_month, Colors.indigo),
+              _statCard(context, 'Pending Payments', '₹${pendingPayments.toStringAsFixed(2)}', Icons.pending_actions, Colors.pink),
+              _statCard(context, 'Total Products', '$totalProducts', Icons.inventory, Colors.green),
             ],
           ),
           const SizedBox(height: 24),
           _salesChartCard(billController),
+          const SizedBox(height: 24),
+          _salesPieChartCard(monthBills),
+          const SizedBox(height: 24),
+          _recentInvoicesCard(billController),
           const SizedBox(height: 24),
           const Text('Quick Actions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
           const SizedBox(height: 12),
@@ -133,6 +146,12 @@ class WindowsDashboardScreen extends StatelessWidget {
       for (int i = 0; i < totals.length; i++) FlSpot(i.toDouble(), totals[i]),
     ];
 
+    final minY = (totals.isEmpty ? 0.0 : totals.reduce((a, b) => a < b ? a : b));
+    final maxY = (totals.isEmpty ? 0.0 : totals.reduce((a, b) => a > b ? a : b));
+    final yPad = (maxY - minY) * 0.15;
+    final yMin = (minY - yPad).clamp(0.0, double.infinity);
+    final yMax = maxY + yPad + (maxY == 0 ? 100 : 0);
+
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.blue.withOpacity(0.15))),
@@ -150,6 +169,8 @@ class WindowsDashboardScreen extends StatelessWidget {
                   LineChartData(
                     minX: 0,
                     maxX: 6,
+                    minY: yMin,
+                    maxY: yMax,
                     titlesData: FlTitlesData(
                       bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, getTitlesWidget: (v, meta) {
                         final i = v.toInt();
@@ -157,7 +178,7 @@ class WindowsDashboardScreen extends StatelessWidget {
                         final d = last7[i];
                         return Text('${d.day}/${d.month}', style: const TextStyle(fontSize: 10));
                       })),
-                      leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40)),
+                      leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 48)),
                       topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                       rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                     ),
@@ -180,6 +201,100 @@ class WindowsDashboardScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _salesPieChartCard(List bills) {
+    double completed = 0, partiallyPaid = 0, unpaid = 0;
+    for (final b in bills) {
+      final total = (b as dynamic).totalAmount as double;
+      final paid = (b as dynamic).paidAmount as double;
+      if (paid >= total) {
+        completed += total;
+      } else if (paid > 0) {
+        partiallyPaid += total;
+      } else {
+        unpaid += total;
+      }
+    }
+    final sections = <PieChartSectionData>[
+      if (completed > 0) PieChartSectionData(color: Colors.green, value: completed, title: 'Paid'),
+      if (partiallyPaid > 0) PieChartSectionData(color: Colors.orange, value: partiallyPaid, title: 'Partial'),
+      if (unpaid > 0) PieChartSectionData(color: Colors.red, value: unpaid, title: 'Unpaid'),
+    ];
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.purple.withOpacity(0.15))),
+      child: SizedBox(
+        height: 260,
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Sales Status - This Month', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Expanded(
+              child: Row(children: [
+                Expanded(child: PieChart(PieChartData(sections: sections, sectionsSpace: 2, centerSpaceRadius: 40))),
+                const SizedBox(width: 12),
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: const [
+                  _LegendDot(color: Colors.green, label: 'Paid'),
+                  _LegendDot(color: Colors.orange, label: 'Partial'),
+                  _LegendDot(color: Colors.red, label: 'Unpaid'),
+                ]),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _recentInvoicesCard(BillController billController) {
+    final recent = billController.bills.where((b) => b.status != BillStatus.draft).toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+    final top = recent.take(10).toList();
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.withOpacity(0.2))),
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Recent Invoices', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          DataTable(columns: const [
+            DataColumn(label: Text('Date')),
+            DataColumn(label: Text('Customer')),
+            DataColumn(label: Text('Amount')),
+            DataColumn(label: Text('Paid')),
+            DataColumn(label: Text('Status')),
+          ], rows: [
+            for (final b in top)
+              DataRow(cells: [
+                DataCell(Text('${b.date.day}/${b.date.month}/${b.date.year}')),
+                DataCell(Text(b.customerName ?? '-')),
+                DataCell(Text('₹${b.totalAmount.toStringAsFixed(2)}')),
+                DataCell(Text('₹${b.paidAmount.toStringAsFixed(2)}')),
+                DataCell(Text(b.status.name)),
+              ]),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color; final String label;
+  const _LegendDot({required this.color, required this.label});
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.0),
+      child: Row(children: [
+        Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(label),
+      ]),
     );
   }
 }
