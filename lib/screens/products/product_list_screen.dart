@@ -438,12 +438,13 @@ class ProductListScreen extends StatelessWidget {
     try {
       final excel = ex.Excel.createExcel();
       const sheetName = 'Products';
-      // Use default sheet by renaming it so viewers open the populated sheet
-      if (excel.sheets.keys.contains('Sheet1')) {
-        excel.rename('Sheet1', sheetName);
-      }
       excel.setDefaultSheet(sheetName);
-      final sheet = excel[sheetName];
+      late final ex.Sheet sheet;
+      if (excel.sheets.containsKey(sheetName)) {
+        sheet = excel.sheets[sheetName]!;
+      } else {
+        sheet = excel[sheetName];
+      }
       final headers = ['name','barcode','category','unit','cost_price','selling_price','mrp','stock','expiry_date','cgst_percent','sgst_percent','discount_percent'];
       sheet.appendRow(headers.map<ex.CellValue?>((h) => ex.TextCellValue(h)).toList());
       final list = productController.hasActiveFilters ? productController.filteredProducts : productController.products;
@@ -510,11 +511,13 @@ class ProductListScreen extends StatelessWidget {
     try {
       final excel = ex.Excel.createExcel();
       const sheetName = 'Products';
-      if (excel.sheets.keys.contains('Sheet1')) {
-        excel.rename('Sheet1', sheetName);
-      }
       excel.setDefaultSheet(sheetName);
-      final sheet = excel[sheetName];
+      late final ex.Sheet sheet;
+      if (excel.sheets.containsKey(sheetName)) {
+        sheet = excel.sheets[sheetName]!;
+      } else {
+        sheet = excel[sheetName];
+      }
       final headers = ['name','barcode','category','unit','cost_price','selling_price','mrp','stock','expiry_date'];
       sheet.appendRow(headers.map((h) => ex.TextCellValue(h)).toList());
       final sample = ['Paracetamol 500mg','8901234567890','Medicines','piece',1.5,2.0,2.5,100,'2026-03-31'];

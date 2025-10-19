@@ -375,7 +375,12 @@ Future<void> _exportCustomersExcel(BuildContext context) async {
     final excel = ex.Excel.createExcel();
     const sheetName = 'Customers';
     excel.setDefaultSheet(sheetName);
-    final sheet = excel.sheets[sheetName] ?? excel.sheets.values.first;
+    late final ex.Sheet sheet;
+    if (excel.sheets.containsKey(sheetName)) {
+      sheet = excel.sheets[sheetName]!;
+    } else {
+      sheet = excel[sheetName];
+    }
     final headers = ['code','name','phone','email','gstin','total_sale','due','status'];
     sheet.appendRow(headers.map((h) => ex.TextCellValue(h)).toList());
     final list = c.filteredCustomers.isNotEmpty ? c.filteredCustomers : c.customers;

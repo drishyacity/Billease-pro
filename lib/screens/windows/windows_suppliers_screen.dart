@@ -55,11 +55,13 @@ Future<void> _exportSuppliersExcel(BuildContext context) async {
     final c = Get.find<SupplierController>();
     final excel = ex.Excel.createExcel();
     const sheetName = 'Suppliers';
-    if (excel.sheets.keys.contains('Sheet1')) {
-      excel.rename('Sheet1', sheetName);
-    }
     excel.setDefaultSheet(sheetName);
-    final sheet = excel[sheetName];
+    late final ex.Sheet sheet;
+    if (excel.sheets.containsKey(sheetName)) {
+      sheet = excel.sheets[sheetName]!;
+    } else {
+      sheet = excel[sheetName];
+    }
     final headers = ['code','name','phone','email','gstin','total_purchase','due','status'];
     sheet.appendRow(headers.map((h) => ex.TextCellValue(h)).toList());
     final list = c.filteredSuppliers.isNotEmpty ? c.filteredSuppliers : c.suppliers;
