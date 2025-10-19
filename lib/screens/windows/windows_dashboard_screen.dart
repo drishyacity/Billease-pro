@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:billease_pro/controllers/bill_controller.dart';
+import 'package:billease_pro/models/bill_model.dart';
 import 'package:billease_pro/controllers/product_controller.dart';
 import 'package:billease_pro/screens/bills/bill_history_screen.dart';
 import 'package:fl_chart/fl_chart.dart';

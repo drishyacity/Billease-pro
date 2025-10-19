@@ -104,7 +104,7 @@ class _WindowsBillingScreenState extends State<WindowsBillingScreen> {
   double _computeGrandTotal() {
     final subtotal = _computeSubtotal();
     final disc = _computeFinalDiscountOn(subtotal);
-    final afterDisc = (subtotal - disc).clamp(0, double.infinity);
+    final afterDisc = (subtotal - disc).clamp(0.0, double.infinity) as double;
     final gst = _computeTotalGstOn(afterDisc);
     return afterDisc + gst + _extraAmount;
   }
@@ -140,7 +140,7 @@ class _WindowsBillingScreenState extends State<WindowsBillingScreen> {
   @override
   Widget build(BuildContext context) {
     return Shortcuts(
-      shortcuts: const <LogicalKeySet, Intent>{
+      shortcuts: <LogicalKeySet, Intent>{
         LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyS): ActivateIntent(),
         LogicalKeySet(LogicalKeyboardKey.f2): ActivateIntent(),
         LogicalKeySet(LogicalKeyboardKey.f5): ActivateIntent(),
@@ -176,9 +176,7 @@ class _WindowsBillingScreenState extends State<WindowsBillingScreen> {
                           DropdownMenuItem(value: 'return', child: Text('Sales Return')),
                         ],
                         onChanged: (v) => setState(() => _invoiceType = v ?? 'sales'),
-                        decoration: const InputDecoration(labelText: 'Invoice Type'),
-                      ),
-                        },
+                        decoration: InputDecoration(labelText: 'Invoice Type'),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -188,7 +186,7 @@ class _WindowsBillingScreenState extends State<WindowsBillingScreen> {
                           width: 220,
                           child: TextField(
                             controller: _finalDiscountCtrl,
-                            decoration: const InputDecoration(labelText: 'Final Discount'),
+                            decoration: InputDecoration(labelText: 'Final Discount'),
                             keyboardType: TextInputType.number,
                           ),
                         ),

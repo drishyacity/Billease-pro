@@ -118,7 +118,7 @@ class _WindowsShellState extends State<WindowsShell> {
   Widget build(BuildContext context) {
     assert(Platform.isWindows, 'WindowsShell should only be used on Windows');
     return Shortcuts(
-      shortcuts: const <LogicalKeySet, Intent>{
+      shortcuts: <LogicalKeySet, Intent>{
         LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyK): ActivateIntent(),
       },
       child: Actions(
