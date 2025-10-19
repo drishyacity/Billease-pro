@@ -229,6 +229,39 @@ class _WindowsProductsScreenState extends State<WindowsProductsScreen> {
     });
   }
 
+  String _statusFor(model.Product p) {
+    if (p.hasExpiredBatches()) return 'Expired';
+    if (p.hasNearExpiryBatches()) return 'Near Expiry';
+    if (p.isLowStock) return 'Low Stock';
+    return 'OK';
+  }
+
+  Widget _statusPill(String status) {
+    Color color;
+    switch (status) {
+      case 'Expired':
+        color = Colors.red;
+        break;
+      case 'Near Expiry':
+        color = Colors.orange;
+        break;
+      case 'Low Stock':
+        color = Colors.amber;
+        break;
+      default:
+        color = Colors.green;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Text(status, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(

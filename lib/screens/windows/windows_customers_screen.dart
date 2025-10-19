@@ -245,7 +245,7 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
                                     });
                                   },
                                 )),
-                                DataCell(Text(_codeFor(c))),
+                                DataCell(Text(_codeForStatic(c))),
                                 DataCell(Text(c.name)),
                                 DataCell(Row(children: [Text(c.phone), const SizedBox(width: 8), IconButton(icon: const Icon(Icons.call), tooltip: 'Call', onPressed: () { _launchTel(c.phone); })])),
                                 DataCell(Row(children: [
