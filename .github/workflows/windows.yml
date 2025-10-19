@@ -25,6 +25,15 @@ jobs:
       - name: Get packages
         run: flutter pub get
 
+      - name: Clean build
+        run: flutter clean
+
+      - name: Format check
+        run: dart format --set-exit-if-changed .
+
+      - name: Analyze
+        run: flutter analyze
+
       - name: Build Windows (release)
         run: flutter build windows --release
 
