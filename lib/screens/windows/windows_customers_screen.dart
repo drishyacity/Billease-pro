@@ -374,9 +374,6 @@ Future<void> _exportCustomersExcel(BuildContext context) async {
     final c = Get.find<CustomerController>();
     final excel = ex.Excel.createExcel();
     const sheetName = 'Customers';
-    if (excel.sheets.keys.contains('Sheet1')) {
-      excel.rename('Sheet1', sheetName);
-    }
     excel.setDefaultSheet(sheetName);
     final sheet = excel[sheetName];
     final headers = ['code','name','phone','email','gstin','total_sale','due','status'];
