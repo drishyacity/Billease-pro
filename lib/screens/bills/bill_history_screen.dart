@@ -13,7 +13,8 @@ class BillHistoryScreen extends StatefulWidget {
   final String? initialQuick;
   final DateTime? initialFrom;
   final DateTime? initialTo;
-  const BillHistoryScreen({super.key, this.initialQuick, this.initialFrom, this.initialTo});
+  final bool pendingOnly;
+  const BillHistoryScreen({super.key, this.initialQuick, this.initialFrom, this.initialTo, this.pendingOnly = false});
 
   @override
   State<BillHistoryScreen> createState() => _BillHistoryScreenState();
@@ -25,6 +26,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   DateTime? _from;
   DateTime? _to;
   String _quick = 'All';
+  bool _pendingOnly = false;
 
   @override
   void initState() {
@@ -40,6 +42,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
     } else if (widget.initialQuick != null) {
       _setQuick(widget.initialQuick!);
     }
+    _pendingOnly = widget.pendingOnly;
   }
 
   void _applyFilters() {
@@ -165,9 +168,12 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
               if (billController.isLoading) {
                 return const Center(child: CircularProgressIndicator());
               }
-              final bills = billController.filteredBills
+              var bills = billController.filteredBills
                   .where((b) => (b.notes ?? '').toLowerCase() != 'estimate')
                   .toList();
+              if (_pendingOnly) {
+                bills = bills.where((b) => (b.totalAmount - b.paidAmount) > 0).toList();
+              }
               if (bills.isEmpty) {
                 return const Center(child: Text('No bills found'));
               }

@@ -29,6 +29,7 @@ ex.CellValue? _toCellValue(Object? e) {
 
 Future<void> _downloadSampleExcel(BuildContext context) async {
   try {
+    _showProcessing(context, 'Preparing sample...');
     final excel = ex.Excel.createExcel();
     const sheetName = 'Products';
     if (excel.sheets.keys.contains('Sheet1')) {
@@ -42,13 +43,17 @@ Future<void> _downloadSampleExcel(BuildContext context) async {
     sheet.appendRow(sample.map<ex.CellValue?>((e) => _toCellValue(e)).toList());
     final bytes = excel.encode()!;
     await FileSaver.instance.saveFile(name: 'products_sample', bytes: Uint8List.fromList(bytes), ext: 'xlsx', mimeType: MimeType.microsoftExcel);
+    _showSuccess(context, 'Sample Excel downloaded');
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to create sample: $e')));
+  } finally {
+    Navigator.of(context, rootNavigator: true).maybePop();
   }
 }
 
 Future<void> _exportAsExcel(BuildContext context) async {
   try {
+    _showProcessing(context, 'Exporting to Excel...');
     final controller = Get.find<ProductController>();
     final excel = ex.Excel.createExcel();
     const sheetName = 'Products';
@@ -80,13 +85,17 @@ Future<void> _exportAsExcel(BuildContext context) async {
     }
     final bytes = excel.encode()!;
     await FileSaver.instance.saveFile(name: 'products_export', bytes: Uint8List.fromList(bytes), ext: 'xlsx', mimeType: MimeType.microsoftExcel);
+    _showSuccess(context, 'Exported to Excel');
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to export Excel: $e')));
+  } finally {
+    Navigator.of(context, rootNavigator: true).maybePop();
   }
 }
 
 Future<void> _exportAsPdf(BuildContext context) async {
   try {
+    _showProcessing(context, 'Exporting to PDF...');
     final controller = Get.find<ProductController>();
     final pdf = pw.Document();
     final headers = ['Name','Barcode','Category','Unit','MRP','Selling Price','Cost Price','Stock','Expiry','CGST %','SGST %','Discount %'];
@@ -111,7 +120,7 @@ Future<void> _exportAsPdf(BuildContext context) async {
     }
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
+        pageFormat: PdfPageFormat.a4.landscape,
         build: (context) => [
           pw.Text('Products Export', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 12),
@@ -121,13 +130,17 @@ Future<void> _exportAsPdf(BuildContext context) async {
     );
     final bytes = await pdf.save();
     await FileSaver.instance.saveFile(name: 'products_export', bytes: Uint8List.fromList(bytes), ext: 'pdf', mimeType: MimeType.pdf);
+    _showSuccess(context, 'Exported to PDF');
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to export PDF: $e')));
+  } finally {
+    Navigator.of(context, rootNavigator: true).maybePop();
   }
 }
 
 Future<void> _importFromExcel(BuildContext context) async {
   try {
+    _showProcessing(context, 'Importing from Excel...');
     final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['xlsx']);
     if (result == null || result.files.isEmpty) return;
     final fileBytes = result.files.first.bytes ?? await File(result.files.first.path!).readAsBytes();
@@ -149,12 +162,15 @@ Future<void> _importFromExcel(BuildContext context) async {
         'name': name,
         'barcode': val(idxOf('barcode')),
         'category': val(idxOf('category')),
-        'primaryUnit': val(idxOf('unit')).isEmpty ? 'piece' : val(idxOf('unit')),
-        'gstPercentage': 0,
-        'lowStockAlert': 10,
-        'expiryAlertDays': 30,
-        'createdAt': now.toIso8601String(),
-        'updatedAt': now.toIso8601String(),
+        'primary_unit': val(idxOf('unit')).isEmpty ? 'piece' : val(idxOf('unit')),
+        'gst_percentage': 0,
+        'cgst_percentage': numVal(idxOf('cgst_percent')),
+        'sgst_percentage': numVal(idxOf('sgst_percent')),
+        'discount_percentage': numVal(idxOf('discount_percent')),
+        'low_stock_alert': 10,
+        'expiry_alert_days': 30,
+        'created_at': now.toIso8601String(),
+        'updated_at': now.toIso8601String(),
       });
       final batchId = 'BATCH_${id}_1';
       final expiry = val(idxOf('expiry_date'));
@@ -169,11 +185,34 @@ Future<void> _importFromExcel(BuildContext context) async {
         'stock': numVal(idxOf('stock')).toInt(),
       });
     }
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Import completed')));
+    _showSuccess(context, 'Import completed');
     await Get.find<ProductController>().loadProducts();
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to import: $e')));
+  } finally {
+    Navigator.of(context, rootNavigator: true).maybePop();
   }
+}
+
+void _showProcessing(BuildContext context, String msg) {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => AlertDialog(
+      content: Row(children: [const CircularProgressIndicator(), const SizedBox(width: 12), Expanded(child: Text(msg))]),
+    ),
+  );
+}
+
+void _showSuccess(BuildContext context, String msg) {
+  showDialog(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('Success'),
+      content: Text(msg),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+    ),
+  );
 }
 
 class _WindowsProductsScreenState extends State<WindowsProductsScreen> {
@@ -208,11 +247,7 @@ class _WindowsProductsScreenState extends State<WindowsProductsScreen> {
           Row(
             children: [
               const Expanded(child: Text('Products', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold))),
-              OutlinedButton.icon(
-                onPressed: () { Get.to(() => NearExpiryGroupedScreen()); },
-                icon: const Icon(Icons.calendar_month),
-                label: const Text('Near Expiry (Grouped)'),
-              ),
+              // Removed extra grouped button as requested
               Wrap(spacing: 8, children: [
                 OutlinedButton.icon(onPressed: () { controller.setStockExpiryFilters(lowStock: true, nearExpiry: false, expired: false); }, icon: const Icon(Icons.warning_amber), label: const Text('Low Stock')),
                 OutlinedButton.icon(onPressed: () { controller.setStockExpiryFilters(lowStock: false, nearExpiry: true, expired: false); }, icon: const Icon(Icons.timer), label: const Text('Near Expiry')),
@@ -232,6 +267,24 @@ class _WindowsProductsScreenState extends State<WindowsProductsScreen> {
                   onChanged: (v) => setState(() => controller.filterProducts(v)),
                 ),
               ),
+              const SizedBox(width: 8),
+              Obx(() {
+                final cats = controller.categories;
+                final current = controller.categoryFilter.value;
+                return DropdownButton<String>(
+                  value: current.isEmpty ? null : current,
+                  hint: const Text('Category'),
+                  items: [for (final c in cats) DropdownMenuItem(value: c, child: Text(c))],
+                  onChanged: (v) => controller.setCategoryFilter(v ?? ''),
+                );
+              }),
+              const Spacer(),
+              Obx(() {
+                final total = (controller.filteredProducts.isNotEmpty || controller.hasActiveFilters)
+                    ? controller.filteredProducts.length
+                    : controller.products.length;
+                return Text('Total: $total');
+              }),
               const Spacer(),
               OutlinedButton.icon(
                 onPressed: () async { await _exportAsExcel(context); },
@@ -296,9 +349,7 @@ class _WindowsProductsScreenState extends State<WindowsProductsScreen> {
               });
               return Card(
                 clipBehavior: Clip.antiAlias,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: PaginatedDataTable(
+                child: PaginatedDataTable(
                     header: const Text('Inventory'),
                     rowsPerPage: _rowsPerPage,
                     availableRowsPerPage: const [10, 25, 50, 100],
@@ -345,7 +396,6 @@ class _WindowsProductsScreenState extends State<WindowsProductsScreen> {
                       });
                     },
                   ),
-                ),
               );
             }),
           ),
@@ -385,10 +435,28 @@ class _ProductTableSource extends DataTableSource {
         DataCell(Text(p.cgstPercentage.toStringAsFixed(2))),
         DataCell(Text(p.sgstPercentage.toStringAsFixed(2))),
         DataCell(Text(p.discountPercentage.toStringAsFixed(2))),
-        DataCell(Text(_statusFor(p))),
+        DataCell(_statusPill(_statusFor(p))),
         DataCell(Row(children: [
-          IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'Edit', onPressed: () {/* TODO: open edit */}),
-          IconButton(icon: const Icon(Icons.delete_outline), tooltip: 'Delete', onPressed: () {/* TODO: delete single */}),
+          IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'Edit', onPressed: () {
+            // TODO: integrate actual edit product dialog
+            Get.snackbar('Edit', 'Implement product edit UI', snackPosition: SnackPosition.TOP);
+          }),
+          IconButton(icon: const Icon(Icons.delete_outline), tooltip: 'Delete', onPressed: () async {
+            final ok = await showDialog<bool>(
+              context: Get.context!,
+              builder: (_) => AlertDialog(
+                title: const Text('Delete Product'),
+                content: Text('Are you sure you want to delete ${p.name}?'),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(_, false), child: const Text('Cancel')),
+                  FilledButton(onPressed: () => Navigator.pop(_, true), child: const Text('Delete')),
+                ],
+              ),
+            );
+            if (ok == true) {
+              await Get.find<ProductController>().deleteProduct(p.id);
+            }
+          }),
         ])),
       ],
     );
@@ -408,5 +476,27 @@ class _ProductTableSource extends DataTableSource {
     if (p.hasNearExpiryBatches()) return 'Near Expiry';
     if (p.isLowStock) return 'Low Stock';
     return 'OK';
+  }
+
+  Widget _statusPill(String status) {
+    Color color;
+    switch (status) {
+      case 'Expired':
+        color = Colors.red;
+        break;
+      case 'Near Expiry':
+        color = Colors.orange;
+        break;
+      case 'Low Stock':
+        color = Colors.amber;
+        break;
+      default:
+        color = Colors.green;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(16), border: Border.all(color: color.withOpacity(0.3))),
+      child: Text(status, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+    );
   }
 }

@@ -5,6 +5,11 @@ import 'package:billease_pro/controllers/bill_controller.dart';
 import 'package:billease_pro/models/customer_model.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
+import 'package:file_saver/file_saver.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:pdf/pdf.dart';
+import 'dart:typed_data';
+import 'package:excel/excel.dart' as ex;
 
 class WindowsCustomersScreen extends StatefulWidget {
   const WindowsCustomersScreen({super.key});
@@ -18,6 +23,7 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
   final BillController billController = Get.find<BillController>();
   final TextEditingController _searchCtrl = TextEditingController();
   int _rowsPerPage = PaginatedDataTable.defaultRowsPerPage;
+  final Set<String> _selectedIds = <String>{};
 
   @override
   void dispose() {
@@ -36,14 +42,18 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
       builder: (context) => AlertDialog(
         title: Text(existing == null ? 'Add Customer' : 'Edit Customer'),
         content: SizedBox(
-          width: 420,
+          width: 480,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name')),
+              const SizedBox(height: 8),
               TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'Phone'), keyboardType: TextInputType.phone),
+              const SizedBox(height: 8),
               TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email')),
+              const SizedBox(height: 8),
               TextField(controller: addrCtrl, decoration: const InputDecoration(labelText: 'Address')),
+              const SizedBox(height: 8),
               TextField(controller: gstCtrl, decoration: const InputDecoration(labelText: 'GSTIN')),
             ],
           ),
@@ -128,6 +138,10 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
               ),
               const SizedBox(width: 8),
               FilledButton.icon(onPressed: () => _addOrEditCustomer(), icon: const Icon(Icons.person_add), label: const Text('Add')),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(onPressed: () async { await _exportCustomersExcel(context); }, icon: const Icon(Icons.grid_on), label: const Text('Export Excel')),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(onPressed: () async { await _exportCustomersPdf(context); }, icon: const Icon(Icons.picture_as_pdf), label: const Text('Export PDF')),
             ],
           ),
           const SizedBox(height: 12),
@@ -136,14 +150,18 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
               final items = controller.filteredCustomers.isNotEmpty || _searchCtrl.text.isNotEmpty
                   ? controller.filteredCustomers
                   : controller.customers;
+              if (items.isEmpty) {
+                return const Center(child: Text('No customers'));
+              }
               return Card(
                 clipBehavior: Clip.antiAlias,
                 child: PaginatedDataTable(
                   header: const Text('Customers'),
-                  rowsPerPage: _rowsPerPage,
+                  rowsPerPage: _rowsPerPage.clamp(1, items.length),
                   availableRowsPerPage: const [10, 25, 50, 100],
                   onRowsPerPageChanged: (v) => setState(() => _rowsPerPage = v ?? _rowsPerPage),
                   columns: const [
+                    DataColumn(label: Text('Select')),
                     DataColumn(label: Text('Customer Code')),
                     DataColumn(label: Text('Name')),
                     DataColumn(label: Text('Phone')),
@@ -161,11 +179,63 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
                     onEdit: (c) => _addOrEditCustomer(existing: c),
                     onCall: (p) => _launchTel(p),
                     onEmail: (e) => _launchEmail(e),
+                    selectedIds: _selectedIds,
+                    onSelectionChanged: (id, sel) => setState(() { if (sel) _selectedIds.add(id); else _selectedIds.remove(id); }),
+                    onDelete: (c) async {
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: const Text('Delete Customer'),
+                          content: Text('Are you sure you want to delete ${c.name}?'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                          ],
+                        ),
+                      );
+                      if (ok == true) {
+                        controller.deleteCustomer(c.id);
+                      }
+                    },
                   ),
                 ),
               );
             }),
           ),
+          const SizedBox(height: 8),
+          Row(children: [
+            Text('Selected: ${_selectedIds.length}'),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: _selectedIds.isEmpty ? null : () async {
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text('Delete Selected'),
+                    content: Text('Delete ${_selectedIds.length} selected customers?'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                      FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                    ],
+                  ),
+                );
+                if (ok == true) {
+                  for (final id in _selectedIds.toList()) {
+                    await controller.deleteCustomer(id);
+                  }
+                  setState(() => _selectedIds.clear());
+                }
+              },
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Delete Selected'),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(onPressed: () async { await _exportCustomersExcel(context); }, icon: const Icon(Icons.grid_on), label: const Text('Export Excel')),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(onPressed: () async { await _exportCustomersPdf(context); }, icon: const Icon(Icons.picture_as_pdf), label: const Text('Export PDF')),
+            const Spacer(),
+            Text('Total: ${controller.filteredCustomers.isNotEmpty || _searchCtrl.text.isNotEmpty ? controller.filteredCustomers.length : controller.customers.length}')
+          ]),
         ],
       ),
     );
@@ -178,6 +248,9 @@ class _CustomersSource extends DataTableSource {
   final void Function(Customer c) onEdit;
   final void Function(String phone) onCall;
   final void Function(String email) onEmail;
+  final Set<String> selectedIds;
+  final void Function(String id, bool sel) onSelectionChanged;
+  final void Function(Customer c) onDelete;
 
   _CustomersSource({
     required this.items,
@@ -185,6 +258,9 @@ class _CustomersSource extends DataTableSource {
     required this.onEdit,
     required this.onCall,
     required this.onEmail,
+    required this.selectedIds,
+    required this.onSelectionChanged,
+    required this.onDelete,
   });
 
   @override
@@ -194,7 +270,14 @@ class _CustomersSource extends DataTableSource {
     final last = lastPurchaseFor(c.id);
     return DataRow.byIndex(
       index: index,
+      selected: selectedIds.contains(c.id),
+      onSelectChanged: (sel) {
+        if (sel == null) return;
+        onSelectionChanged(c.id, sel);
+        notifyListeners();
+      },
       cells: [
+        DataCell(Checkbox(value: selectedIds.contains(c.id), onChanged: (v) => onSelectionChanged(c.id, v ?? false))),
         DataCell(Text(_codeFor(c))),
         DataCell(Text(c.name)),
         DataCell(Row(children: [Text(c.phone), const SizedBox(width: 8), IconButton(icon: const Icon(Icons.call), tooltip: 'Call', onPressed: () => onCall(c.phone))])),
@@ -206,6 +289,7 @@ class _CustomersSource extends DataTableSource {
         DataCell(Text(last == null ? '-' : '${last.day}/${last.month}/${last.year}')),
         DataCell(Row(children: [
           IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'Edit', onPressed: () => onEdit(c)),
+          IconButton(icon: const Icon(Icons.delete_outline), tooltip: 'Delete', onPressed: () => onDelete(c)),
         ])),
       ],
     );
@@ -231,4 +315,66 @@ class _CustomersSource extends DataTableSource {
     if (c.dueAmount > 0) return 'Due';
     return 'OK';
   }
+}
+
+Future<void> _exportCustomersExcel(BuildContext context) async {
+  try {
+    _showProcessing(context, 'Exporting to Excel...');
+    final c = Get.find<CustomerController>();
+    final excel = ex.Excel.createExcel();
+    const sheetName = 'Customers';
+    if (excel.sheets.keys.contains('Sheet1')) {
+      excel.rename('Sheet1', sheetName);
+    }
+    excel.setDefaultSheet(sheetName);
+    final sheet = excel[sheetName];
+    final headers = ['code','name','phone','email','gstin','total_sale','due','status'];
+    sheet.appendRow(headers.map((h) => ex.TextCellValue(h)).toList());
+    final list = c.filteredCustomers.isNotEmpty ? c.filteredCustomers : c.customers;
+    for (final x in list) {
+      final row = [
+        _codeForStatic(x), x.name, x.phone, x.email ?? '', x.gstin ?? '', x.totalPurchases, x.dueAmount, x.dueAmount > 0 ? 'Due' : 'OK'
+      ];
+      sheet.appendRow(row.map<ex.CellValue?>((e) => _toCellValue(e)).toList());
+    }
+    final bytes = excel.encode()!;
+    await FileSaver.instance.saveFile(name: 'customers_export', bytes: Uint8List.fromList(bytes), ext: 'xlsx', mimeType: MimeType.microsoftExcel);
+    _showSuccess(context, 'Exported to Excel');
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to export Excel: $e')));
+  } finally {
+    Navigator.of(context, rootNavigator: true).maybePop();
+  }
+}
+
+Future<void> _exportCustomersPdf(BuildContext context) async {
+  try {
+    _showProcessing(context, 'Exporting to PDF...');
+    final c = Get.find<CustomerController>();
+    final pdf = pw.Document();
+    final headers = ['Code','Name','Phone','Email','GSTIN','Total Sale','Due','Status'];
+    final list = c.filteredCustomers.isNotEmpty ? c.filteredCustomers : c.customers;
+    final rows = <List<String>>[
+      for (final x in list)
+        [ _codeForStatic(x), x.name, x.phone, x.email ?? '-', x.gstin ?? '-', x.totalPurchases.toStringAsFixed(2), x.dueAmount.toStringAsFixed(2), x.dueAmount > 0 ? 'Due' : 'OK' ]
+    ];
+    pdf.addPage(pw.MultiPage(pageFormat: PdfPageFormat.a4.landscape, build: (_) => [
+      pw.Text('Customers Export', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+      pw.SizedBox(height: 12),
+      pw.Table.fromTextArray(headers: headers, data: rows),
+    ]));
+    final bytes = await pdf.save();
+    await FileSaver.instance.saveFile(name: 'customers_export', bytes: Uint8List.fromList(bytes), ext: 'pdf', mimeType: MimeType.pdf);
+    _showSuccess(context, 'Exported to PDF');
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to export PDF: $e')));
+  } finally {
+    Navigator.of(context, rootNavigator: true).maybePop();
+  }
+}
+
+String _codeForStatic(Customer c) {
+  final base = c.id.replaceAll(RegExp('[^A-Z0-9]'), '').toUpperCase();
+  final tail = base.length >= 6 ? base.substring(base.length - 6) : base.padLeft(6, '0');
+  return 'CUST-$tail';
 }

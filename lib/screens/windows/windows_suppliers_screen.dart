@@ -10,6 +10,62 @@ class WindowsSuppliersScreen extends StatefulWidget {
   State<WindowsSuppliersScreen> createState() => _WindowsSuppliersScreenState();
 }
 
+Future<void> _exportSuppliersExcel(BuildContext context) async {
+  try {
+    _showProcessing(context, 'Exporting to Excel...');
+    final c = Get.find<SupplierController>();
+    final excel = ex.Excel.createExcel();
+    const sheetName = 'Suppliers';
+    if (excel.sheets.keys.contains('Sheet1')) {
+      excel.rename('Sheet1', sheetName);
+    }
+    excel.setDefaultSheet(sheetName);
+    final sheet = excel[sheetName];
+    final headers = ['code','name','phone','email','gstin','total_purchase','due','status'];
+    sheet.appendRow(headers.map((h) => ex.TextCellValue(h)).toList());
+    final list = c.filteredSuppliers.isNotEmpty ? c.filteredSuppliers : c.suppliers;
+    for (final x in list) {
+      final row = [
+        _codeFor(x), x.name, x.phone, x.email ?? '', x.gstin ?? '', x.totalPurchases, x.dueAmount, x.dueAmount > 0 ? 'Due' : 'OK'
+      ];
+      sheet.appendRow(row.map<ex.CellValue?>((e) => _toCellValue(e)).toList());
+    }
+    final bytes = excel.encode()!;
+    await FileSaver.instance.saveFile(name: 'suppliers_export', bytes: Uint8List.fromList(bytes), ext: 'xlsx', mimeType: MimeType.microsoftExcel);
+    _showSuccess(context, 'Exported to Excel');
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to export Excel: $e')));
+  } finally {
+    Navigator.of(context, rootNavigator: true).maybePop();
+  }
+}
+
+Future<void> _exportSuppliersPdf(BuildContext context) async {
+  try {
+    _showProcessing(context, 'Exporting to PDF...');
+    final c = Get.find<SupplierController>();
+    final pdf = pw.Document();
+    final headers = ['Code','Name','Phone','Email','GSTIN','Total Purchase','Due','Status'];
+    final list = c.filteredSuppliers.isNotEmpty ? c.filteredSuppliers : c.suppliers;
+    final rows = <List<String>>[
+      for (final x in list)
+        [ _codeFor(x), x.name, x.phone, x.email ?? '-', x.gstin ?? '-', x.totalPurchases.toStringAsFixed(2), x.dueAmount.toStringAsFixed(2), x.dueAmount > 0 ? 'Due' : 'OK' ]
+    ];
+    pdf.addPage(pw.MultiPage(pageFormat: PdfPageFormat.a4.landscape, build: (_) => [
+      pw.Text('Suppliers Export', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+      pw.SizedBox(height: 12),
+      pw.Table.fromTextArray(headers: headers, data: rows),
+    ]));
+    final bytes = await pdf.save();
+    await FileSaver.instance.saveFile(name: 'suppliers_export', bytes: Uint8List.fromList(bytes), ext: 'pdf', mimeType: MimeType.pdf);
+    _showSuccess(context, 'Exported to PDF');
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to export PDF: $e')));
+  } finally {
+    Navigator.of(context, rootNavigator: true).maybePop();
+  }
+}
+
 class _WindowsSuppliersScreenState extends State<WindowsSuppliersScreen> {
   late final SupplierController controller;
   
@@ -24,6 +80,7 @@ class _WindowsSuppliersScreenState extends State<WindowsSuppliersScreen> {
   }
   final TextEditingController _searchCtrl = TextEditingController();
   int _rowsPerPage = PaginatedDataTable.defaultRowsPerPage;
+  final Set<String> _selectedIds = <String>{};
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +106,10 @@ class _WindowsSuppliersScreenState extends State<WindowsSuppliersScreen> {
                 icon: const Icon(Icons.add),
                 label: const Text('Add Supplier'),
               ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(onPressed: () async { await _exportSuppliersExcel(context); }, icon: const Icon(Icons.grid_on), label: const Text('Export Excel')),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(onPressed: () async { await _exportSuppliersPdf(context); }, icon: const Icon(Icons.picture_as_pdf), label: const Text('Export PDF')),
             ],
           ),
           const SizedBox(height: 12),
@@ -59,10 +120,11 @@ class _WindowsSuppliersScreenState extends State<WindowsSuppliersScreen> {
                 clipBehavior: Clip.antiAlias,
                 child: PaginatedDataTable(
                   header: const Text('Suppliers'),
-                  rowsPerPage: _rowsPerPage,
+                  rowsPerPage: items.isEmpty ? 1 : _rowsPerPage.clamp(1, items.length),
                   availableRowsPerPage: const [10, 25, 50, 100],
                   onRowsPerPageChanged: (v) => setState(() => _rowsPerPage = v ?? _rowsPerPage),
                   columns: const [
+                    DataColumn(label: Text('Select')),
                     DataColumn(label: Text('Supplier Code')),
                     DataColumn(label: Text('Name')),
                     DataColumn(label: Text('Phone')),
@@ -75,12 +137,64 @@ class _WindowsSuppliersScreenState extends State<WindowsSuppliersScreen> {
                   ],
                   source: _SuppliersSource(
                     items: items,
+                    selectedIds: _selectedIds,
+                    onSelectionChanged: (id, sel) => setState(() { if (sel) _selectedIds.add(id); else _selectedIds.remove(id); }),
                     onEdit: (s) => _addOrEditSupplier(existing: s),
+                    onDelete: (s) async {
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: const Text('Delete Supplier'),
+                          content: Text('Are you sure you want to delete ${s.name}?'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                          ],
+                        ),
+                      );
+                      if (ok == true) {
+                        await controller.deleteSupplier(s.id);
+                      }
+                    },
                   ),
                 ),
               );
             }),
           ),
+          const SizedBox(height: 8),
+          Row(children: [
+            Text('Selected: ${_selectedIds.length}'),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: _selectedIds.isEmpty ? null : () async {
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text('Delete Selected'),
+                    content: Text('Delete ${_selectedIds.length} selected suppliers?'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                      FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                    ],
+                  ),
+                );
+                if (ok == true) {
+                  for (final id in _selectedIds.toList()) {
+                    await controller.deleteSupplier(id);
+                  }
+                  setState(() => _selectedIds.clear());
+                }
+              },
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Delete Selected'),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(onPressed: () async { await _exportSuppliersExcel(context); }, icon: const Icon(Icons.grid_on), label: const Text('Export Excel')),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(onPressed: () async { await _exportSuppliersPdf(context); }, icon: const Icon(Icons.picture_as_pdf), label: const Text('Export PDF')),
+            const Spacer(),
+            Obx(() => Text('Total: ${controller.filteredSuppliers.length}')),
+          ]),
         ],
       ),
     );
@@ -148,8 +262,11 @@ class _WindowsSuppliersScreenState extends State<WindowsSuppliersScreen> {
 
 class _SuppliersSource extends DataTableSource {
   final List<Supplier> items;
+  final Set<String> selectedIds;
+  final void Function(String id, bool sel) onSelectionChanged;
   final void Function(Supplier s) onEdit;
-  _SuppliersSource({required this.items, required this.onEdit});
+  final void Function(Supplier s) onDelete;
+  _SuppliersSource({required this.items, required this.selectedIds, required this.onSelectionChanged, required this.onEdit, required this.onDelete});
 
   @override
   DataRow? getRow(int index) {
@@ -157,7 +274,14 @@ class _SuppliersSource extends DataTableSource {
     final s = items[index];
     return DataRow.byIndex(
       index: index,
+      selected: selectedIds.contains(s.id),
+      onSelectChanged: (sel) {
+        if (sel == null) return;
+        onSelectionChanged(s.id, sel);
+        notifyListeners();
+      },
       cells: [
+        DataCell(Checkbox(value: selectedIds.contains(s.id), onChanged: (v) => onSelectionChanged(s.id, v ?? false))),
         DataCell(Text(_codeFor(s))),
         DataCell(Text(s.name)),
         DataCell(Text(s.phone)),
@@ -168,6 +292,7 @@ class _SuppliersSource extends DataTableSource {
         DataCell(Text(s.dueAmount > 0 ? 'Due' : 'OK')),
         DataCell(Row(children: [
           IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'Edit', onPressed: () => onEdit(s)),
+          IconButton(icon: const Icon(Icons.delete_outline), tooltip: 'Delete', onPressed: () => onDelete(s)),
         ])),
       ],
     );

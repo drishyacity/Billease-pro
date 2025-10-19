@@ -43,15 +43,47 @@ class WindowsDashboardScreen extends StatelessWidget {
                 Get.to(() => const BillHistoryScreen(initialQuick: 'Today'));
               }),
               _statCard(context, 'Low Stock', '$lowStockCount', Icons.warning_amber, Colors.red, onTap: () {
-                // Navigate to Products tab with filters in Windows shell
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Use Products page filters for Low Stock')));
+                try {
+                  final pc = Get.find<ProductController>();
+                  pc.setStockExpiryFilters(lowStock: true, nearExpiry: false, expired: false);
+                } catch (_) {}
+                Get.offAllNamed('/', arguments: {'index': 3});
               }),
               _statCard(context, 'Near Expiry', '$nearExpiryCount', Icons.timer, Colors.orange, onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Use Products page filters for Near Expiry')));
+                try {
+                  final pc = Get.find<ProductController>();
+                  pc.setStockExpiryFilters(lowStock: false, nearExpiry: true, expired: false);
+                } catch (_) {}
+                Get.offAllNamed('/', arguments: {'index': 3});
               }),
-              _statCard(context, 'Monthly Sale', '₹${monthlySale.toStringAsFixed(2)}', Icons.calendar_month, Colors.indigo),
-              _statCard(context, 'Pending Payments', '₹${pendingPayments.toStringAsFixed(2)}', Icons.pending_actions, Colors.pink),
+              _statCard(context, 'Monthly Sale', '₹${monthlySale.toStringAsFixed(2)}', Icons.calendar_month, Colors.indigo, onTap: () {
+                Get.to(() => const BillHistoryScreen(initialQuick: 'This Month'));
+              }),
+              _statCard(context, 'Pending Payments', '₹${pendingPayments.toStringAsFixed(2)}', Icons.pending_actions, Colors.pink, onTap: () {
+                Get.to(() => const BillHistoryScreen(pendingOnly: true));
+              }),
               _statCard(context, 'Total Products', '$totalProducts', Icons.inventory, Colors.green),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Text('Quick Actions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _actionChip(context, Icons.receipt_long, 'Create Bill', Colors.blue, onTap: () {
+                Get.offAllNamed('/', arguments: {'index': 4});
+              }),
+              _actionChip(context, Icons.people, 'Customers', Colors.orange, onTap: () {
+                Get.offAllNamed('/', arguments: {'index': 1});
+              }),
+              _actionChip(context, Icons.inventory, 'Products', Colors.green, onTap: () {
+                Get.offAllNamed('/', arguments: {'index': 3});
+              }),
+              _actionChip(context, Icons.history, 'Bill History', Colors.purple, onTap: () {
+                Get.to(() => const BillHistoryScreen());
+              }),
             ],
           ),
           const SizedBox(height: 24),
@@ -60,24 +92,6 @@ class WindowsDashboardScreen extends StatelessWidget {
           _salesPieChartCard(monthBills),
           const SizedBox(height: 24),
           _recentInvoicesCard(billController),
-          const SizedBox(height: 24),
-          const Text('Quick Actions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _actionChip(context, Icons.receipt_long, 'Create Bill', Colors.blue, onTap: () {
-                // Switch to Billing page in Windows shell
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Open Billing from sidebar')));
-              }),
-              _actionChip(context, Icons.people, 'Customers', Colors.orange, onTap: () {}),
-              _actionChip(context, Icons.inventory, 'Products', Colors.green, onTap: () {}),
-              _actionChip(context, Icons.analytics, 'Reports', Colors.purple, onTap: () {
-                Get.to(() => const BillHistoryScreen());
-              }),
-            ],
-          ),
         ],
       ),
     );
