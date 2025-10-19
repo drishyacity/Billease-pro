@@ -165,7 +165,7 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              FilledButton.icon(onPressed: () => _addOrEditCustomer(), icon: const Icon(Icons.person_add), label: const Text('Add')),
+              FilledButton.icon(onPressed: () { _addOrEditCustomer(); }, icon: const Icon(Icons.person_add), label: const Text('Add')),
               const SizedBox(width: 8),
               OutlinedButton.icon(onPressed: () async { await _exportCustomersExcel(context); }, icon: const Icon(Icons.grid_on), label: const Text('Export Excel')),
               const SizedBox(width: 8),
