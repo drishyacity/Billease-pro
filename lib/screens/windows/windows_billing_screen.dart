@@ -227,8 +227,8 @@ class _WindowsBillingScreenState extends State<WindowsBillingScreen> {
                     )
                   ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
