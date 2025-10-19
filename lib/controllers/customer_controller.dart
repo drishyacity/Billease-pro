@@ -60,11 +60,10 @@ class CustomerController extends GetxController {
     }
   }
 
-  void deleteCustomer(String id) {
-    DatabaseService().deleteCustomerById(id).then((_) {
-      _customers.removeWhere((c) => c.id == id);
-      filterCustomers(searchQuery.value);
-    });
+  Future<void> deleteCustomer(String id) async {
+    await DatabaseService().deleteCustomerById(id);
+    _customers.removeWhere((c) => c.id == id);
+    filterCustomers(searchQuery.value);
   }
 
   void filterCustomers(String query) {
