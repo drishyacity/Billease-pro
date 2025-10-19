@@ -93,13 +93,25 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
       ); },
     );
     if (result == true) {
+      final phone = phoneCtrl.text.trim();
+      final email = emailCtrl.text.trim();
+      final phoneOk = RegExp(r'^\d{10}$').hasMatch(phone);
+      final emailOk = email.isEmpty || RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
+      if (!phoneOk) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter a valid 10-digit phone number')));
+        return;
+      }
+      if (!emailOk) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter a valid email address')));
+        return;
+      }
       if (existing == null) {
         final now = DateTime.now();
         final c = Customer(
           id: const Uuid().v4(),
           name: nameCtrl.text.trim(),
-          phone: phoneCtrl.text.trim(),
-          email: emailCtrl.text.trim().isEmpty ? null : emailCtrl.text.trim(),
+          phone: phone,
+          email: email.isEmpty ? null : email,
           address: addrCtrl.text.trim().isEmpty ? null : addrCtrl.text.trim(),
           gstin: gstCtrl.text.trim().isEmpty ? null : gstCtrl.text.trim(),
           createdAt: now,
@@ -111,8 +123,8 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
         final c = Customer(
           id: existing.id,
           name: nameCtrl.text.trim(),
-          phone: phoneCtrl.text.trim(),
-          email: emailCtrl.text.trim().isEmpty ? null : emailCtrl.text.trim(),
+          phone: phone,
+          email: email.isEmpty ? null : email,
           address: addrCtrl.text.trim().isEmpty ? null : addrCtrl.text.trim(),
           gstin: gstCtrl.text.trim().isEmpty ? null : gstCtrl.text.trim(),
           totalPurchases: existing.totalPurchases,
@@ -187,60 +199,90 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
               }
               return Card(
                 clipBehavior: Clip.antiAlias,
-                child: PaginatedDataTable(
-                  header: const Text('Customers'),
-                  rowsPerPage: (items.length < _rowsPerPage ? items.length : _rowsPerPage),
-                  availableRowsPerPage: const [10, 25, 50, 100],
-                  onRowsPerPageChanged: (v) {
-                    setState(() {
-                      _rowsPerPage = v ?? _rowsPerPage;
-                    });
-                  },
-                  columns: const [
-                    DataColumn(label: Text('Select')),
-                    DataColumn(label: Text('Customer Code')),
-                    DataColumn(label: Text('Name')),
-                    DataColumn(label: Text('Phone')),
-                    DataColumn(label: Text('Email')),
-                    DataColumn(label: Text('GSTIN')),
-                    DataColumn(label: Text('Total Sale')),
-                    DataColumn(label: Text('Due')),
-                    DataColumn(label: Text('Status')),
-                    DataColumn(label: Text('Last Purchase')),
-                    DataColumn(label: Text('Actions')),
-                  ],
-                  source: _CustomersSource(
-                    items: items,
-                    lastPurchaseFor: _lastPurchaseFor,
-                    onEdit: (c) => _addOrEditCustomer(existing: c),
-                    onCall: (p) { _launchTel(p); },
-                    onEmail: (e) { _launchEmail(e); },
-                    selectedIds: _selectedIds,
-                    onSelectionChanged: (id, sel) {
-                      setState(() {
-                        if (sel) {
-                          _selectedIds.add(id);
-                        } else {
-                          _selectedIds.remove(id);
-                        }
-                      });
-                    },
-                    onDelete: (c) async {
-                      final ok = await showDialog<bool>(
-                        context: context,
-                        builder: (_) { return AlertDialog(
-                          title: const Text('Delete Customer'),
-                          content: Text('Are you sure you want to delete ${c.name}?'),
-                          actions: [
-                            TextButton(onPressed: () { Navigator.pop(context, false); }, child: const Text('Cancel')),
-                            FilledButton(onPressed: () { Navigator.pop(context, true); }, child: const Text('Delete')),
-                          ],
-                        ); },
-                      );
-                      if (ok == true) {
-                        controller.deleteCustomer(c.id);
-                      }
-                    },
+                child: Scrollbar(
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.vertical,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: DataTable(
+                        columns: const [
+                          DataColumn(label: Text('Select')),
+                          DataColumn(label: Text('Customer Code')),
+                          DataColumn(label: Text('Name')),
+                          DataColumn(label: Text('Phone')),
+                          DataColumn(label: Text('Email')),
+                          DataColumn(label: Text('GSTIN')),
+                          DataColumn(label: Text('Total Sale')),
+                          DataColumn(label: Text('Due')),
+                          DataColumn(label: Text('Status')),
+                          DataColumn(label: Text('Last Purchase')),
+                          DataColumn(label: Text('Actions')),
+                        ],
+                        rows: [
+                          for (final c in items)
+                            DataRow(
+                              selected: _selectedIds.contains(c.id),
+                              onSelectChanged: (sel) {
+                                setState(() {
+                                  if (sel == true) {
+                                    _selectedIds.add(c.id);
+                                  } else {
+                                    _selectedIds.remove(c.id);
+                                  }
+                                });
+                              },
+                              cells: [
+                                DataCell(Checkbox(
+                                  value: _selectedIds.contains(c.id),
+                                  onChanged: (v) {
+                                    setState(() {
+                                      if (v == true) {
+                                        _selectedIds.add(c.id);
+                                      } else {
+                                        _selectedIds.remove(c.id);
+                                      }
+                                    });
+                                  },
+                                )),
+                                DataCell(Text(_codeFor(c))),
+                                DataCell(Text(c.name)),
+                                DataCell(Row(children: [Text(c.phone), const SizedBox(width: 8), IconButton(icon: const Icon(Icons.call), tooltip: 'Call', onPressed: () { _launchTel(c.phone); })])),
+                                DataCell(Row(children: [
+                                  Text(c.email ?? '-'),
+                                  (c.email ?? '').isNotEmpty
+                                      ? Row(children: [const SizedBox(width: 8), IconButton(icon: const Icon(Icons.email_outlined), tooltip: 'Email', onPressed: () { _launchEmail(c.email!); })])
+                                      : const SizedBox.shrink(),
+                                ])),
+                                DataCell(Text(c.gstin ?? '-')),
+                                DataCell(Text('₹${c.totalPurchases.toStringAsFixed(2)}')),
+                                DataCell(Text('₹${c.dueAmount.toStringAsFixed(2)}')),
+                                DataCell(Text(c.dueAmount > 0 ? 'Due' : 'OK')),
+                                DataCell(Text((){ final last = _lastPurchaseFor(c.id); return last == null ? '-' : '${last.day}/${last.month}/${last.year}'; }())),
+                                DataCell(Row(children: [
+                                  IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'Edit', onPressed: () { _addOrEditCustomer(existing: c); }),
+                                  IconButton(icon: const Icon(Icons.delete_outline), tooltip: 'Delete', onPressed: () async {
+                                    final ok = await showDialog<bool>(
+                                      context: context,
+                                      builder: (_) { return AlertDialog(
+                                        title: const Text('Delete Customer'),
+                                        content: Text('Are you sure you want to delete ${c.name}?'),
+                                        actions: [
+                                          TextButton(onPressed: () { Navigator.pop(context, false); }, child: const Text('Cancel')),
+                                          FilledButton(onPressed: () { Navigator.pop(context, true); }, child: const Text('Delete')),
+                                        ],
+                                      ); },
+                                    );
+                                    if (ok == true) {
+                                      await controller.deleteCustomer(c.id);
+                                    }
+                                  }),
+                                ])),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               );
@@ -276,9 +318,7 @@ class _WindowsCustomersScreenState extends State<WindowsCustomersScreen> {
               label: const Text('Delete Selected'),
             ),
             const SizedBox(width: 8),
-            OutlinedButton.icon(onPressed: () async { await _exportCustomersExcel(context); }, icon: const Icon(Icons.grid_on), label: const Text('Export Excel')),
-            const SizedBox(width: 8),
-            OutlinedButton.icon(onPressed: () async { await _exportCustomersPdf(context); }, icon: const Icon(Icons.picture_as_pdf), label: const Text('Export PDF')),
+            // Removed duplicate export buttons (already available in header row)
             const Spacer(),
             Text('Total: ${controller.filteredCustomers.isNotEmpty || _searchCtrl.text.isNotEmpty ? controller.filteredCustomers.length : controller.customers.length}')
           ]),

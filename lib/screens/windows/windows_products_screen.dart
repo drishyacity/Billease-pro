@@ -264,9 +264,12 @@ class _WindowsProductsScreenState extends State<WindowsProductsScreen> {
                 final cats = controller.categories;
                 final current = controller.categoryFilter.value;
                 return DropdownButton<String>(
-                  value: current.isEmpty ? null : current,
+                  value: current,
                   hint: const Text('Category'),
-                  items: [for (final c in cats) DropdownMenuItem(value: c, child: Text(c))],
+                  items: [
+                    const DropdownMenuItem(value: '', child: Text('All')),
+                    for (final c in cats) DropdownMenuItem(value: c, child: Text(c))
+                  ],
                   onChanged: (v) => controller.setCategoryFilter(v ?? ''),
                 );
               }),
@@ -304,14 +307,27 @@ class _WindowsProductsScreenState extends State<WindowsProductsScreen> {
               const SizedBox(width: 8),
               OutlinedButton.icon(
                 onPressed: _selectedIds.isEmpty ? null : () async {
-                  final list = List<model.Product>.from(controller.products);
-                  for (final id in _selectedIds.toList()) {
-                    final matches = list.where((e) => e.id == id);
-                    if (matches.isNotEmpty) {
-                      await controller.deleteProduct(matches.first.id);
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      title: const Text('Delete Selected'),
+                      content: Text('Delete ${_selectedIds.length} selected products?'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                      ],
+                    ),
+                  );
+                  if (ok == true) {
+                    final list = List<model.Product>.from(controller.products);
+                    for (final id in _selectedIds.toList()) {
+                      final matches = list.where((e) => e.id == id);
+                      if (matches.isNotEmpty) {
+                        await controller.deleteProduct(matches.first.id);
+                      }
                     }
+                    setState(() => _selectedIds.clear());
                   }
-                  setState(() => _selectedIds.clear());
                 },
                 icon: const Icon(Icons.delete_outline),
                 label: const Text('Delete Selected'),
@@ -330,64 +346,105 @@ class _WindowsProductsScreenState extends State<WindowsProductsScreen> {
             child: Obx(() {
               final data = controller.filteredProducts.isNotEmpty ? controller.filteredProducts : controller.products;
               final List<model.Product> list = List<model.Product>.from(data);
-              final source = _ProductTableSource(list, _selectedIds, onSelectionChanged: (id, sel) {
-                setState(() {
-                  if (sel) {
-                    _selectedIds.add(id);
-                  } else {
-                    _selectedIds.remove(id);
-                  }
-                });
-              });
               return Card(
                 clipBehavior: Clip.antiAlias,
-                child: PaginatedDataTable(
-                    header: const Text('Inventory'),
-                    rowsPerPage: _rowsPerPage,
-                    availableRowsPerPage: const [10, 25, 50, 100],
-                    onRowsPerPageChanged: (v) => setState(() => _rowsPerPage = v ?? _rowsPerPage),
-                    sortColumnIndex: _sortColumnIndex,
-                    sortAscending: _sortAscending,
-                    columns: [
-                      DataColumn(
-                        label: const Text('Name'),
-                        onSort: (i, asc) => _sort<String>((p) => p.name.toLowerCase(), i, asc),
+                child: Scrollbar(
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.vertical,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: DataTable(
+                        sortColumnIndex: _sortColumnIndex,
+                        sortAscending: _sortAscending,
+                        columns: [
+                          const DataColumn(label: Text('Select')),
+                          DataColumn(
+                            label: const Text('Name'),
+                            onSort: (i, asc) => _sort<String>((p) => p.name.toLowerCase(), i, asc),
+                          ),
+                          const DataColumn(label: Text('Barcode/HSN')),
+                          const DataColumn(label: Text('Unit')),
+                          DataColumn(
+                            label: const Text('Category'),
+                            onSort: (i, asc) => _sort<String>((p) => (p.category ?? '').toLowerCase(), i, asc),
+                          ),
+                          const DataColumn(numeric: true, label: Text('Stock')),
+                          const DataColumn(numeric: true, label: Text('Cost')),
+                          const DataColumn(numeric: true, label: Text('MRP')),
+                          const DataColumn(numeric: true, label: Text('Selling')),
+                          const DataColumn(numeric: true, label: Text('CGST %')),
+                          const DataColumn(numeric: true, label: Text('SGST %')),
+                          const DataColumn(numeric: true, label: Text('Discount %')),
+                          const DataColumn(label: Text('Status')),
+                          const DataColumn(label: Text('Actions')),
+                        ],
+                        rows: [
+                          for (final p in list)
+                            DataRow(
+                              selected: _selectedIds.contains(p.id),
+                              onSelectChanged: (sel) {
+                                setState(() {
+                                  if (sel == true) {
+                                    _selectedIds.add(p.id);
+                                  } else {
+                                    _selectedIds.remove(p.id);
+                                  }
+                                });
+                              },
+                              cells: [
+                                DataCell(Checkbox(
+                                  value: _selectedIds.contains(p.id),
+                                  onChanged: (v) {
+                                    setState(() {
+                                      if (v == true) {
+                                        _selectedIds.add(p.id);
+                                      } else {
+                                        _selectedIds.remove(p.id);
+                                      }
+                                    });
+                                  },
+                                )),
+                                DataCell(Text(p.name)),
+                                DataCell(Text(p.barcode ?? '-')),
+                                DataCell(Text(p.primaryUnit)),
+                                DataCell(Text(p.category ?? '-')),
+                                DataCell(Text(p.totalStock.toStringAsFixed(0))),
+                                DataCell(Text((p.batches.isNotEmpty ? p.batches.first.costPrice : 0.0).toStringAsFixed(2))),
+                                DataCell(Text((p.batches.isNotEmpty ? p.batches.first.mrp : 0.0).toStringAsFixed(2))),
+                                DataCell(Text((p.batches.isNotEmpty ? p.batches.first.sellingPrice : 0.0).toStringAsFixed(2))),
+                                DataCell(Text(p.cgstPercentage.toStringAsFixed(2))),
+                                DataCell(Text(p.sgstPercentage.toStringAsFixed(2))),
+                                DataCell(Text(p.discountPercentage.toStringAsFixed(2))),
+                                DataCell(_statusPill(_statusFor(p))),
+                                DataCell(Row(children: [
+                                  IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'Edit', onPressed: () {
+                                    Get.snackbar('Edit', 'Implement product edit UI', snackPosition: SnackPosition.TOP);
+                                  }),
+                                  IconButton(icon: const Icon(Icons.delete_outline), tooltip: 'Delete', onPressed: () async {
+                                    final ok = await showDialog<bool>(
+                                      context: Get.context!,
+                                      builder: (_) => AlertDialog(
+                                        title: const Text('Delete Product'),
+                                        content: Text('Are you sure you want to delete ${p.name}?'),
+                                        actions: [
+                                          TextButton(onPressed: () => Navigator.pop(_, false), child: const Text('Cancel')),
+                                          FilledButton(onPressed: () => Navigator.pop(_, true), child: const Text('Delete')),
+                                        ],
+                                      ),
+                                    );
+                                    if (ok == true) {
+                                      await Get.find<ProductController>().deleteProduct(p.id);
+                                    }
+                                  }),
+                                ])),
+                              ],
+                            ),
+                        ],
                       ),
-                      const DataColumn(label: Text('Barcode/HSN')),
-                      const DataColumn(label: Text('Unit')),
-                      DataColumn(
-                        label: const Text('Category'),
-                        onSort: (i, asc) => _sort<String>((p) => (p.category ?? '').toLowerCase(), i, asc),
-                      ),
-                      DataColumn(
-                        numeric: true,
-                        label: const Text('Stock'),
-                        onSort: (i, asc) => _sort<num>((p) => p.totalStock, i, asc),
-                      ),
-                      const DataColumn(numeric: true, label: Text('Cost')),
-                      const DataColumn(numeric: true, label: Text('MRP')),
-                      DataColumn(
-                        numeric: true,
-                        label: const Text('Selling'),
-                        onSort: (i, asc) => _sort<num>((p) => (p.batches.isNotEmpty ? p.batches.first.sellingPrice : 0.0), i, asc),
-                      ),
-                      const DataColumn(numeric: true, label: Text('CGST %')),
-                      const DataColumn(numeric: true, label: Text('SGST %')),
-                      const DataColumn(numeric: true, label: Text('Discount %')),
-                      const DataColumn(label: Text('Status')),
-                      const DataColumn(label: Text('Actions')),
-                    ],
-                    source: source,
-                    onSelectAll: (v) {
-                      setState(() {
-                        if (v == true) {
-                          _selectedIds.addAll(list.map((e) => e.id));
-                        } else {
-                          _selectedIds.clear();
-                        }
-                      });
-                    },
+                    ),
                   ),
+                ),
               );
             }),
           ),

@@ -109,6 +109,11 @@ class _OnboardingBasicDetailsScreenState extends State<OnboardingBasicDetailsScr
                                 child: TextFormField(
                                   controller: _phone,
                                   decoration: const InputDecoration(labelText: 'Contact phone'),
+                                  validator: (v) {
+                                    final t = (v ?? '').trim();
+                                    if (t.isEmpty) return 'Required';
+                                    return RegExp(r'^\d{10}$').hasMatch(t) ? null : 'Enter 10-digit number';
+                                  },
                                 ),
                               ),
                               SizedBox(
@@ -116,6 +121,11 @@ class _OnboardingBasicDetailsScreenState extends State<OnboardingBasicDetailsScr
                                 child: TextFormField(
                                   controller: _email,
                                   decoration: const InputDecoration(labelText: 'Email'),
+                                  validator: (v) {
+                                    final t = (v ?? '').trim();
+                                    if (t.isEmpty) return 'Required';
+                                    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(t) ? null : 'Enter valid email';
+                                  },
                                 ),
                               ),
                               SizedBox(

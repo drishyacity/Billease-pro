@@ -153,44 +153,71 @@ class _WindowsSuppliersScreenState extends State<WindowsSuppliersScreen> {
               final items = controller.filteredSuppliers;
               return Card(
                 clipBehavior: Clip.antiAlias,
-                child: PaginatedDataTable(
-                  header: const Text('Suppliers'),
-                  rowsPerPage: items.isEmpty ? 1 : (items.length < _rowsPerPage ? items.length : _rowsPerPage),
-                  availableRowsPerPage: const [10, 25, 50, 100],
-                  onRowsPerPageChanged: (v) => setState(() => _rowsPerPage = v ?? _rowsPerPage),
-                  columns: const [
-                    DataColumn(label: Text('Select')),
-                    DataColumn(label: Text('Supplier Code')),
-                    DataColumn(label: Text('Name')),
-                    DataColumn(label: Text('Phone')),
-                    DataColumn(label: Text('Email')),
-                    DataColumn(label: Text('GSTIN')),
-                    DataColumn(label: Text('Total Purchase')),
-                    DataColumn(label: Text('Due')),
-                    DataColumn(label: Text('Status')),
-                    DataColumn(label: Text('Actions')),
-                  ],
-                  source: _SuppliersSource(
-                    items: items,
-                    selectedIds: _selectedIds,
-                    onSelectionChanged: (id, sel) => setState(() { if (sel) _selectedIds.add(id); else _selectedIds.remove(id); }),
-                    onEdit: (s) => _addOrEditSupplier(existing: s),
-                    onDelete: (s) async {
-                      final ok = await showDialog<bool>(
-                        context: context,
-                        builder: (_) => AlertDialog(
-                          title: const Text('Delete Supplier'),
-                          content: Text('Are you sure you want to delete ${s.name}?'),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-                            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
-                          ],
-                        ),
-                      );
-                      if (ok == true) {
-                        await controller.deleteSupplier(s.id);
-                      }
-                    },
+                child: Scrollbar(
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.vertical,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: DataTable(
+                        columns: const [
+                          DataColumn(label: Text('Select')),
+                          DataColumn(label: Text('Supplier Code')),
+                          DataColumn(label: Text('Name')),
+                          DataColumn(label: Text('Phone')),
+                          DataColumn(label: Text('Email')),
+                          DataColumn(label: Text('GSTIN')),
+                          DataColumn(label: Text('Total Purchase')),
+                          DataColumn(label: Text('Due')),
+                          DataColumn(label: Text('Status')),
+                          DataColumn(label: Text('Actions')),
+                        ],
+                        rows: [
+                          for (final s in items)
+                            DataRow(
+                              selected: _selectedIds.contains(s.id),
+                              onSelectChanged: (sel) {
+                                setState(() {
+                                  if (sel == true) _selectedIds.add(s.id); else _selectedIds.remove(s.id);
+                                });
+                              },
+                              cells: [
+                                DataCell(Checkbox(
+                                  value: _selectedIds.contains(s.id),
+                                  onChanged: (v) => setState(() { if (v == true) _selectedIds.add(s.id); else _selectedIds.remove(s.id); }),
+                                )),
+                                DataCell(Text(_codeFor(s))),
+                                DataCell(Text(s.name)),
+                                DataCell(Text(s.phone)),
+                                DataCell(Text(s.email ?? '-')),
+                                DataCell(Text(s.gstin ?? '-')),
+                                DataCell(Text('₹${s.totalPurchases.toStringAsFixed(2)}')),
+                                DataCell(Text('₹${s.dueAmount.toStringAsFixed(2)}')),
+                                DataCell(Text(s.dueAmount > 0 ? 'Due' : 'OK')),
+                                DataCell(Row(children: [
+                                  IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'Edit', onPressed: () => _addOrEditSupplier(existing: s)),
+                                  IconButton(icon: const Icon(Icons.delete_outline), tooltip: 'Delete', onPressed: () async {
+                                    final ok = await showDialog<bool>(
+                                      context: context,
+                                      builder: (_) => AlertDialog(
+                                        title: const Text('Delete Supplier'),
+                                        content: Text('Are you sure you want to delete ${s.name}?'),
+                                        actions: [
+                                          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                                          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                                        ],
+                                      ),
+                                    );
+                                    if (ok == true) {
+                                      await controller.deleteSupplier(s.id);
+                                    }
+                                  }),
+                                ])),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               );
@@ -273,12 +300,25 @@ class _WindowsSuppliersScreenState extends State<WindowsSuppliersScreen> {
     );
     if (res != true) return;
 
+    final phone = phoneCtrl.text.trim();
+    final email = emailCtrl.text.trim();
+    final phoneOk = RegExp(r'^\d{10}$').hasMatch(phone);
+    final emailOk = email.isEmpty || RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
+    if (!phoneOk) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter a valid 10-digit phone number')));
+      return;
+    }
+    if (!emailOk) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter a valid email address')));
+      return;
+    }
+
     final now = DateTime.now();
     final supplier = Supplier(
       id: existing?.id ?? 'SUP_${now.microsecondsSinceEpoch}',
       name: nameCtrl.text.trim(),
-      phone: phoneCtrl.text.trim(),
-      email: emailCtrl.text.trim().isEmpty ? null : emailCtrl.text.trim(),
+      phone: phone,
+      email: email.isEmpty ? null : email,
       address: addressCtrl.text.trim().isEmpty ? null : addressCtrl.text.trim(),
       gstin: gstinCtrl.text.trim().isEmpty ? null : gstinCtrl.text.trim(),
       totalPurchases: existing?.totalPurchases ?? 0.0,
