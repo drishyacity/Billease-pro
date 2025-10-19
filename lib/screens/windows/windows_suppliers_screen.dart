@@ -70,7 +70,7 @@ Future<void> _exportSuppliersExcel(BuildContext context) async {
       sheet.appendRow(row.map<ex.CellValue?>((e) => _toCellValue(e)).toList());
     }
     final bytes = excel.encode()!;
-    await FileSaver.instance.saveFile(name: 'suppliers_export', bytes: Uint8List.fromList(bytes), ext: 'xlsx', mimeType: MimeType.microsoftExcel);
+    FileSaver.instance.saveFile(name: 'suppliers_export', bytes: Uint8List.fromList(bytes), ext: 'xlsx', mimeType: MimeType.microsoftExcel);
     _showSuccess(context, 'Exported to Excel');
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to export Excel: $e')));
@@ -96,7 +96,7 @@ Future<void> _exportSuppliersPdf(BuildContext context) async {
       pw.Table.fromTextArray(headers: headers, data: rows),
     ]));
     final bytes = await pdf.save();
-    await FileSaver.instance.saveFile(name: 'suppliers_export', bytes: Uint8List.fromList(bytes), ext: 'pdf', mimeType: MimeType.pdf);
+    FileSaver.instance.saveFile(name: 'suppliers_export', bytes: Uint8List.fromList(bytes), ext: 'pdf', mimeType: MimeType.pdf);
     _showSuccess(context, 'Exported to PDF');
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to export PDF: $e')));
